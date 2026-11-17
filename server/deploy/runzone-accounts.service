@@ -1,0 +1,27 @@
+[Unit]
+Description=RunZone account connections
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=%h/apps/runzone/current
+EnvironmentFile=%h/apps/runzone/shared/service.env
+Environment=NODE_OPTIONS=--max-old-space-size=96
+ExecStart=%h/apps/runzone/runtime/node/bin/node index.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+UMask=0077
+NoNewPrivileges=true
+MemoryMax=192M
+CPUQuota=25%
+TasksMax=32
+LimitNOFILE=1024
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
