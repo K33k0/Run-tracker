@@ -1,13 +1,43 @@
 plugins { id 'com.android.application' }
+def releaseStore = System.getenv('RUNZONE_KEYSTORE_PATH')
+def releaseStorePassword = System.getenv('RUNZONE_STORE_PASSWORD')
+def releaseAlias = System.getenv('RUNZONE_KEY_ALIAS')
+def releaseKeyPassword = System.getenv('RUNZONE_KEY_PASSWORD')
+def releaseSigningReady = [releaseStore, releaseStorePassword, releaseAlias, releaseKeyPassword].every { it != null && !it.isEmpty() }
 android {
     namespace 'com.runzone'
     compileSdk 35
     defaultConfig {
-        applicationId 'com.runzone'; minSdk 26; targetSdk 35; versionCode 3; versionName '1.2'
+        applicationId 'com.runzone'; minSdk 26; targetSdk 35
+        versionCode providers.gradleProperty('releaseVersionCode').map { it.toInteger() }.getOrElse(3)
+        versionName providers.gradleProperty('releaseVersion').getOrElse('1.2')
         buildConfigField 'String', 'OAUTH_BASE_URL', groovy.json.JsonOutput.toJson(project.findProperty('oauthBaseUrl') ?: '')
     }
     buildFeatures { buildConfig true }
+    signingConfigs {
+        release {
+            if (releaseSigningReady) {
+                storeFile file(releaseStore)
+                storeType 'PKCS12'
+                storePassword releaseStorePassword
+                keyAlias releaseAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+    buildTypes {
+        release {
+            debuggable false
+            if (releaseSigningReady) signingConfig signingConfigs.release
+        }
+    }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
 }
 dependencies { testImplementation 'junit:junit:4.13.2'; testImplementation 'org.json:json:20240303' }
 tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
+def verifyReleaseSigning = tasks.register('verifyReleaseSigning') {
+    doLast {
+        if (!releaseSigningReady) throw new GradleException('Release builds require RUNZONE_KEYSTORE_PATH, RUNZONE_STORE_PASSWORD, RUNZONE_KEY_ALIAS and RUNZONE_KEY_PASSWORD.')
+    }
+}
+tasks.matching { it.name == 'preReleaseBuild' }.configureEach { dependsOn verifyReleaseSigning }

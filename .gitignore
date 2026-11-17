@@ -26,3 +26,6 @@ runs/
 *.fit
 *.log
 *.hprof
+__pycache__/
+*.pyc
+dist/
