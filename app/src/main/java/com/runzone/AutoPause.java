@@ -8,7 +8,7 @@ public final class AutoPause {
         if(!enabled){reset();return autoPaused?1:0;}
         if(manualPause||secondsPerKm<=0||!Double.isFinite(speed)||speed<0){reset();return 0;}
         double threshold=1000d/secondsPerKm;
-        if(autoPaused){slowSince=-1;if(speed>=threshold+.25){if(fastSince<0)fastSince=now;if(now-fastSince>=3000){reset();return 1;}}else fastSince=-1;}
+        if(autoPaused){slowSince=-1;if(speed>=threshold){if(fastSince<0)fastSince=now;if(now-fastSince>=3000){reset();return 1;}}else fastSince=-1;}
         else {fastSince=-1;if(speed<threshold){if(slowSince<0)slowSince=now;if(now-slowSince>=10000){reset();return -1;}}else slowSince=-1;}
         return 0;
     }

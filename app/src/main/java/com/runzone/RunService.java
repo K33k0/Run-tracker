@@ -19,9 +19,13 @@ public class RunService extends Service implements LocationListener {
     public boolean autoPaused;
     private final AutoPause autoPause=new AutoPause();
     private double recentSpeed=Double.NaN;
+    private Location speedAnchor;
     private long speedAt,segmentStarted;
     private final Runnable paceCheck=new Runnable(){public void run(){
+        long now=SystemClock.elapsedRealtime();
+        if(sensorAddress!=null&&gatt!=null&&now-(lastHr>0?lastHr:sensorAttemptAt)>30000)retrySensor();
         if(running){
+            if(runWakeLock!=null&&now-wakeRenewedAt>=60000){runWakeLock.acquire(120000);wakeRenewedAt=now;}
             android.content.SharedPreferences prefs=getSharedPreferences("settings",0);
             double speed=SystemClock.elapsedRealtime()-speedAt<=5000?recentSpeed:Double.NaN;
             int change=autoPause.accept(prefs.getBoolean("autoPause",false),paused&&!autoPaused,autoPaused,prefs.getInt("pausePace",720),speed,SystemClock.elapsedRealtime());
@@ -38,6 +42,11 @@ public class RunService extends Service implements LocationListener {
     private final RouteDistance distanceTracker=new RouteDistance();
     private LocationManager locations;
     private volatile BluetoothGatt gatt;
+    private String sensorAddress;
+    private long sensorAttemptAt;
+    private final Runnable reconnectSensor=()->{if(sensorAddress!=null)openSensor();};
+    private PowerManager.WakeLock runWakeLock;
+    private long wakeRenewedAt;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private JSONArray points = new JSONArray();
     private JSONArray heartSamples = new JSONArray();
@@ -69,8 +78,11 @@ public class RunService extends Service implements LocationListener {
         if(intent==null) { stopSelf(); return START_NOT_STICKY; }
         if("START".equals(intent.getAction()) && !running) {
             running=true; paused=false; started=SystemClock.elapsedRealtime(); pausedTotal=0; meters=0;
+            runWakeLock=getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"RunZone:recording");
+            runWakeLock.setReferenceCounted(false);
+            runWakeLock.acquire(120000);wakeRenewedAt=started;
             startedAt=System.currentTimeMillis();trackIndex=0;
-            autoPaused=false;autoPause.reset();recentSpeed=Double.NaN;segmentStarted=started;
+            autoPaused=false;autoPause.reset();recentSpeed=Double.NaN;speedAnchor=null;segmentStarted=started;
             zoneLow=getSharedPreferences("settings",0).getInt("low",120);zoneHigh=getSharedPreferences("settings",0).getInt("high",150);
             coach.reset(); distanceTracker.reset(); route.clear(); points=new JSONArray();heartSamples=new JSONArray();
             promote(gatt!=null || intent.hasExtra("device"));
@@ -83,11 +95,12 @@ public class RunService extends Service implements LocationListener {
     public long elapsed() { return !running?0:(paused ? pausedAt : SystemClock.elapsedRealtime()) - started - pausedTotal; }
     public void finishRun() {
         running=false; paused=false; autoPaused=false;autoPause.reset();coach.reset(); distanceTracker.reset();
+        if(runWakeLock!=null&&runWakeLock.isHeld())runWakeLock.release();
         if(locations!=null) locations.removeUpdates(this);
-        if(gatt!=null) promote(true); else stopSelf();
+        if(sensorAddress!=null) promote(true); else stopSelf();
     }
     public void disconnectSensor() {
-        if(gatt!=null) { try { gatt.disconnect(); gatt.close(); } catch(SecurityException ignored){} gatt=null; }
+        sensorAddress=null;handler.removeCallbacks(reconnectSensor);closeSensor();
         bpm=-1; sensor="No sensor connected"; coach.reset();
         if(running) promote(false); else stopSelf();
     }
@@ -101,11 +114,25 @@ public class RunService extends Service implements LocationListener {
     }
     @Override public void onLocationChanged(Location location) {
         if (!running) return;
-        if (!location.hasAccuracy() || location.getAccuracy()>30 || SystemClock.elapsedRealtimeNanos()-location.getElapsedRealtimeNanos()>15_000_000_000L) { gps="Weak GPS signal"; distanceTracker.reset(); return; }
+        long fixAge=SystemClock.elapsedRealtimeNanos()-location.getElapsedRealtimeNanos();
+        if (!location.hasAccuracy() || location.getAccuracy()>30 || fixAge<0 || fixAge>5_000_000_000L) { gps="Weak GPS signal"; distanceTracker.reset();recentSpeed=Double.NaN;speedAnchor=null; return; }
         gps="GPS connected • ±"+(int)location.getAccuracy()+" m";
         if(location.getAccuracy()<=15&&location.hasSpeed()&&(!location.hasSpeedAccuracy()||location.getSpeedAccuracyMetersPerSecond()<=.8f)){
-            recentSpeed=location.getSpeed();speedAt=SystemClock.elapsedRealtime();
-        }else{recentSpeed=Double.NaN;}
+            recentSpeed=location.getSpeed();speedAt=location.getElapsedRealtimeNanos()/1000000;
+        }else if(location.getAccuracy()<=15){
+            // Some phones omit speed after stopping. Keep a separate anchor while paused.
+            if(speedAnchor!=null){
+                long delta=location.getElapsedRealtimeNanos()-speedAnchor.getElapsedRealtimeNanos();
+                if(delta>=3_000_000_000L&&delta<=10_000_000_000L){
+                    float distance=location.distanceTo(speedAnchor);
+                    if(distance>location.getAccuracy()+speedAnchor.getAccuracy()){
+                        recentSpeed=distance/(delta/1e9);speedAt=location.getElapsedRealtimeNanos()/1000000;
+                    }
+                }
+                if(delta>=10_000_000_000L||delta<=0)speedAnchor=null;
+            }
+        }else{recentSpeed=Double.NaN;speedAnchor=null;}
+        if(location.getAccuracy()<=15&&speedAnchor==null)speedAnchor=new Location(location);
         lastFix=new Location(location);
         if(paused) return;
         if(location.getElapsedRealtimeNanos()/1000000<segmentStarted)return;
@@ -120,12 +147,12 @@ public class RunService extends Service implements LocationListener {
     @Override public void onProviderDisabled(String provider) { gps="GPS turned off"; distanceTracker.reset(); }
     @Override public void onProviderEnabled(String provider) { gps="Waiting for GPS"; }
     public int freshBpm() { return SystemClock.elapsedRealtime()-lastHr>10000 ? -1 : bpm; }
-    private void receive(byte[] bytes) { handler.post(()-> {
-        if(current!=this) return;
+    private void receive(BluetoothGatt connection,byte[] bytes) { handler.post(()-> {
+        if(current!=this||connection!=gatt) return;
         bpm=HeartRate.decode(bytes); lastHr=SystemClock.elapsedRealtime();
         if(running&&!paused&&RunRecord.validBpm(bpm))try{heartSamples.put(new JSONObject().put("time",System.currentTimeMillis()).put("activeMs",elapsed()).put("bpm",bpm).put("track",trackIndex));}catch(JSONException ignored){}
         android.content.SharedPreferences prefs=getSharedPreferences("settings",0);
-        int zone=coach.accept(running&&!paused,bpm,prefs.getInt("low",120),prefs.getInt("high",150),lastHr);
+        int zone=coach.accept(ZoneCoach.enabled(running,paused,autoPaused),bpm,prefs.getInt("low",120),prefs.getInt("high",150),lastHr);
         if(zone!=0) {
             if(tone!=null) tone.startTone(zone>0 ? ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD : ToneGenerator.TONE_PROP_BEEP2,700);
             Vibrator vibrator=(Vibrator)getSystemService(VIBRATOR_SERVICE);
@@ -133,20 +160,34 @@ public class RunService extends Service implements LocationListener {
         }
     }); }
     private void connect(String address) {
+        sensorAddress=address;handler.removeCallbacks(reconnectSensor);openSensor();
+    }
+    private void closeSensor() {
+        BluetoothGatt old=gatt;gatt=null;
+        if(old!=null)try{old.disconnect();old.close();}catch(SecurityException ignored){}
+    }
+    private void retrySensor() {
+        closeSensor();bpm=-1;lastHr=0;coach.reset();
+        handler.removeCallbacks(reconnectSensor);
+        if(sensorAddress!=null){sensor="Sensor disconnected • reconnecting…";handler.postDelayed(reconnectSensor,5000);}
+    }
+    private void openSensor() {
+        handler.removeCallbacks(reconnectSensor);
+        closeSensor();
         sensor="Connecting…";
+        sensorAttemptAt=SystemClock.elapsedRealtime();
         try {
-            if(gatt!=null) { gatt.disconnect(); gatt.close(); }
             bpm=-1; lastHr=0;
             BluetoothAdapter adapter=getSystemService(BluetoothManager.class).getAdapter();
-            if(adapter==null || !adapter.isEnabled()) { sensor="Bluetooth is off"; return; }
-            BluetoothDevice device=adapter.getRemoteDevice(address);
+            if(adapter==null || !adapter.isEnabled()) { retrySensor();sensor="Bluetooth is off • waiting to reconnect";return; }
+            BluetoothDevice device=adapter.getRemoteDevice(sensorAddress);
             gatt=device.connectGatt(this,false,new BluetoothGattCallback(){
                 @Override public void onConnectionStateChange(BluetoothGatt connection,int status,int state) {
                     handler.post(()->{
                         if(connection!=gatt) return;
                         try {
-                            if(state==BluetoothProfile.STATE_CONNECTED && status==BluetoothGatt.GATT_SUCCESS) { sensor="Discovering heart-rate service…"; connection.discoverServices(); }
-                            else { sensor="Sensor disconnected • tap to reconnect"; bpm=-1; }
+                            if(state==BluetoothProfile.STATE_CONNECTED && status==BluetoothGatt.GATT_SUCCESS) { sensor="Discovering heart-rate service…"; if(!connection.discoverServices())retrySensor(); }
+                            else if(state==BluetoothProfile.STATE_DISCONNECTED||status!=BluetoothGatt.GATT_SUCCESS)retrySensor();
                         } catch(SecurityException e) { sensor="Nearby devices permission needed"; }
                     });
                 }
@@ -157,19 +198,19 @@ public class RunService extends Service implements LocationListener {
                     BluetoothGattService service=connection.getService(HR);
                     BluetoothGattCharacteristic characteristic=service==null?null:service.getCharacteristic(MEASUREMENT);
                     BluetoothGattDescriptor descriptor=characteristic==null?null:characteristic.getDescriptor(CCC);
-                    if(status!=0 || descriptor==null || !connection.setCharacteristicNotification(characteristic,true)) { sensor="Heart-rate notifications unavailable"; return; }
+                    if(status!=0 || descriptor==null || !connection.setCharacteristicNotification(characteristic,true)) { retrySensor(); return; }
                     if(Build.VERSION.SDK_INT>=33) {
-                        if(connection.writeDescriptor(descriptor,BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)!=BluetoothStatusCodes.SUCCESS) sensor="Could not subscribe to sensor";
+                        if(connection.writeDescriptor(descriptor,BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)!=BluetoothStatusCodes.SUCCESS) retrySensor();
                     } else {
                         descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-                        if(!connection.writeDescriptor(descriptor)) sensor="Could not subscribe to sensor";
+                        if(!connection.writeDescriptor(descriptor)) retrySensor();
                     }
                     } catch(SecurityException e) { sensor="Nearby devices permission needed"; }
                     });
                 }
-                @Override public void onDescriptorWrite(BluetoothGatt connection,BluetoothGattDescriptor descriptor,int status) { if(connection==gatt) sensor=status==0?"Heart-rate sensor connected":"Sensor subscription failed"; }
-                @Override public void onCharacteristicChanged(BluetoothGatt connection,BluetoothGattCharacteristic characteristic) { if(connection==gatt&&MEASUREMENT.equals(characteristic.getUuid())) receive(characteristic.getValue()); }
-                @Override public void onCharacteristicChanged(BluetoothGatt connection,BluetoothGattCharacteristic characteristic,byte[] value) { if(connection==gatt&&MEASUREMENT.equals(characteristic.getUuid())) receive(value); }
+                @Override public void onDescriptorWrite(BluetoothGatt connection,BluetoothGattDescriptor descriptor,int status) { handler.post(()->{if(connection==gatt){if(status==0)sensor="Heart-rate sensor connected";else retrySensor();}}); }
+                @Override public void onCharacteristicChanged(BluetoothGatt connection,BluetoothGattCharacteristic characteristic) { if(connection==gatt&&MEASUREMENT.equals(characteristic.getUuid())) receive(connection,characteristic.getValue()); }
+                @Override public void onCharacteristicChanged(BluetoothGatt connection,BluetoothGattCharacteristic characteristic,byte[] value) { if(connection==gatt&&MEASUREMENT.equals(characteristic.getUuid())) receive(connection,value); }
             },BluetoothDevice.TRANSPORT_LE);
         } catch(SecurityException | IllegalArgumentException e) { sensor="Bluetooth permission unavailable"; }
     }
@@ -185,6 +226,8 @@ public class RunService extends Service implements LocationListener {
         } catch(Exception e) { return false; }
     }
     @Override public void onDestroy() {
+        sensorAddress=null;
+        if(runWakeLock!=null&&runWakeLock.isHeld())runWakeLock.release();
         if(locations!=null) locations.removeUpdates(this);
         if(gatt!=null) { try { gatt.disconnect(); gatt.close(); } catch(SecurityException ignored) {} }
         handler.removeCallbacksAndMessages(null); if(tone!=null) tone.release(); current=null; super.onDestroy();

@@ -32,11 +32,11 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`. For sig
 
 Location updates are filtered for accuracy, age and implausible speed. A distance anchor retains sub-two-metre fixes so frequent updates do not discard slow movement. Manual and automatic pauses reset the distance anchor and separate route tracks. Active duration excludes pauses; elapsed duration includes them.
 
-Bluetooth devices must expose the standard BLE Heart Rate Service. Measurements support both 8-bit and 16-bit heart-rate payloads and sensor-contact flags. Stale readings disappear after ten seconds. GPS works independently of a heart-rate monitor. A sensor-only foreground service can show live BPM before a run; zone coaching is enabled only while a run is actively recording.
+Bluetooth devices must expose the standard BLE Heart Rate Service. Measurements support both 8-bit and 16-bit heart-rate payloads and sensor-contact flags. Stale readings disappear after ten seconds. GPS works independently of a heart-rate monitor. A sensor-only foreground service can show live BPM before a run; zone coaching is enabled during a run, including automatic pauses, and suppressed during manual pauses. Dropped connections and failed subscriptions retry after five seconds; thirty seconds without measurements also triggers reconnection. Explicit disconnect cancels retries.
 
 Zone warnings trigger after five seconds continuously outside the inclusive target boundaries, then repeat every twenty seconds. Sound and vibration patterns differ above/below the target.
 
-Auto-pause is optional. The pace range is 3:00–30:00 min/km (default 12:00). Reliable speed below the threshold for ten seconds pauses recording. Speed at least 0.25 m/s above the threshold for three seconds resumes. Manual pauses are never automatically resumed. Stale/poor GPS does not count as stationary movement.
+Auto-pause is optional. The pace range is 3:00–30:00 min/km (default 12:00). Reliable speed below the threshold for ten seconds pauses recording. Speed at or above the threshold for three seconds resumes. Accurate position displacement can supply resume speed when GPS omits its speed field. Manual pauses are never automatically resumed. Stale/poor GPS does not count as stationary movement. A partial wake lock is held for the run (including pauses) and released on finish or service destruction so screen-off processing can continue.
 
 ## Storage and exports
 

@@ -2,6 +2,7 @@ package com.runzone;
 
 /** Decides when to alert; preview readings never trigger run coaching. */
 public final class ZoneCoach {
+    public static boolean enabled(boolean running,boolean paused,boolean autoPaused){return running&&(!paused||autoPaused);}
     private long outsideSince=-1,lastAlert=-1,lastMeasurement=-1;
     private int previousZone;
     public void reset(){outsideSince=-1;lastAlert=-1;lastMeasurement=-1;previousZone=0;}
