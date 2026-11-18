@@ -27,6 +27,7 @@ public class MainActivity extends Activity implements LocationListener {
     private LocationManager locations;
     private boolean previewListening;
     private Runnable afterPermission;
+    private boolean checkedOpeningPermissions, permissionRequestPending;
     private final Handler handler=new Handler(Looper.getMainLooper());
     private BluetoothLeScanner scanner;
     private ScanCallback scan;
@@ -39,6 +40,10 @@ public class MainActivity extends Activity implements LocationListener {
 
     @Override public void onCreate(Bundle state){
         super.onCreate(state);ensureZones();locations=getSystemService(LocationManager.class);
+        if(state!=null){
+            checkedOpeningPermissions=state.getBoolean("checkedOpeningPermissions");
+            permissionRequestPending=state.getBoolean("permissionRequestPending");
+        }
         selected=getSharedPreferences("settings",0).getString("device",null);
         if(state!=null&&state.getString("export")!=null)pendingExport=new java.io.File(new java.io.File(getCacheDir(),"exports"),state.getString("export"));
         if(state!=null&&state.getString("detail")!=null)openRun(new java.io.File(new java.io.File(getFilesDir(),"runs"),state.getString("detail")));else show("Run");
@@ -217,16 +222,82 @@ public class MainActivity extends Activity implements LocationListener {
             new AlertDialog.Builder(this).setTitle("Connect "+CloudAccounts.name(provider)+"?").setMessage("You'll sign in with "+CloudAccounts.name(provider)+". New saved runs will sync automatically; older runs sync only when you choose. You can turn this off or disconnect in Settings."+("smashrun".equals(provider)?" When Smashrun access expires, sign in again to continue syncing.":"")).setPositiveButton("Continue",(d,w)->background.execute(()->{try{Uri authorize=CloudAccounts.begin(this,provider);runOnUiThread(()->startActivity(new Intent(Intent.ACTION_VIEW,authorize)));}catch(Exception e){runOnUiThread(()->Toast.makeText(this,"Could not start sign-in. The service may not be configured yet.",Toast.LENGTH_LONG).show());}})).setNegativeButton("Cancel",null).show();
     }
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);if(intent.getBooleanExtra("checkUpdate",false)){intent.removeExtra("checkUpdate");AppUpdates.check(this,true);}setIntent(intent);handleAccountCallback(intent);}
-    private void handleAccountCallback(Intent intent){Uri uri=intent.getData();if(uri==null||!"runzone".equals(uri.getScheme())||!"accounts".equals(uri.getHost()))return;setIntent(new Intent(this,MainActivity.class));background.execute(()->{try{String provider=CloudAccounts.complete(this,uri);runOnUiThread(()->{show("Settings");Toast.makeText(this,CloudAccounts.name(provider)+" connected. New runs will sync automatically.",Toast.LENGTH_LONG).show();});}catch(Exception e){runOnUiThread(()->Toast.makeText(this,"Sign-in was cancelled, expired or did not grant upload permission. Please try again.",Toast.LENGTH_LONG).show());}});}
+    private void handleAccountCallback(Intent intent){
+        Uri uri=intent.getData();
+        if(uri==null||!"runzone".equals(uri.getScheme())||!"accounts".equals(uri.getHost()))return;
+        setIntent(new Intent(this,MainActivity.class));
+        background.execute(()->{
+            try{
+                String provider=CloudAccounts.complete(this,uri);
+                runOnUiThread(()->{
+                    show("Settings");
+                    Toast.makeText(this,CloudAccounts.name(provider)+" connected. New runs will sync automatically.",Toast.LENGTH_LONG).show();
+                });
+            }catch(Exception e){
+                String message="Sign-in was cancelled, expired or did not grant upload permission. Please try again.";
+                if(e instanceof SmashrunAuth.Failure)message=e.getMessage();
+                else if("smashrun".equals(uri.getLastPathSegment()))
+                    message="RunZone couldn’t complete Smashrun sign-in. Start again from Settings.";
+                String failureMessage=message;
+                runOnUiThread(()->Toast.makeText(this,failureMessage,Toast.LENGTH_LONG).show());
+            }
+        });
+    }
     private boolean hasLocation(){return checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED||checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED;}
     private boolean bluetoothAllowed(){return Build.VERSION.SDK_INT<31?hasLocation():checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN)==PackageManager.PERMISSION_GRANTED&&checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)==PackageManager.PERMISSION_GRANTED;}
     private boolean permissions(boolean location,boolean bluetooth,Runnable continuation){
-        ArrayList<String> required=new ArrayList<>();if(location||(bluetooth&&Build.VERSION.SDK_INT<31)){required.add(Manifest.permission.ACCESS_FINE_LOCATION);required.add(Manifest.permission.ACCESS_COARSE_LOCATION);}
-        if(bluetooth&&Build.VERSION.SDK_INT>=31){required.add(Manifest.permission.BLUETOOTH_SCAN);required.add(Manifest.permission.BLUETOOTH_CONNECT);}
-        ArrayList<String> missing=new ArrayList<>();for(String p:required)if(checkSelfPermission(p)!=PackageManager.PERMISSION_GRANTED)missing.add(p);
-        if(!missing.isEmpty()){afterPermission=continuation;requestPermissions(missing.toArray(new String[0]),1);return false;}return true;
+        return requestMissingPermissions(missingPermissions(location,bluetooth),continuation);
     }
-    @Override public void onRequestPermissionsResult(int code,String[] permissions,int[] results){super.onRequestPermissionsResult(code,permissions,results);Runnable next=afterPermission;afterPermission=null;if(code==1&&results.length>0){boolean granted=true;for(int r:results)granted&=r==PackageManager.PERMISSION_GRANTED;if(granted&&next!=null)next.run();else Toast.makeText(this,"Permission needed. You can change it in Settings → App permissions.",Toast.LENGTH_LONG).show();}}
+    private ArrayList<String> missingPermissions(boolean location,boolean bluetooth){
+        ArrayList<String> missing=new ArrayList<>();
+        if((location||(bluetooth&&Build.VERSION.SDK_INT<31))&&!hasLocation()){
+            missing.add(Manifest.permission.ACCESS_FINE_LOCATION);
+            missing.add(Manifest.permission.ACCESS_COARSE_LOCATION);
+        }
+        if(bluetooth&&Build.VERSION.SDK_INT>=31){
+            addIfMissing(missing,Manifest.permission.BLUETOOTH_SCAN);
+            addIfMissing(missing,Manifest.permission.BLUETOOTH_CONNECT);
+        }
+        return missing;
+    }
+    private void addIfMissing(ArrayList<String> missing,String permission){
+        if(checkSelfPermission(permission)!=PackageManager.PERMISSION_GRANTED)missing.add(permission);
+    }
+    private boolean requestMissingPermissions(ArrayList<String> missing,Runnable continuation){
+        if(missing.isEmpty())return true;
+        if(!permissionRequestPending){
+            permissionRequestPending=true;
+            afterPermission=continuation;
+            requestPermissions(missing.toArray(new String[0]),1);
+        }
+        return false;
+    }
+    private void requestOpeningPermissions(){
+        if(checkedOpeningPermissions||permissionRequestPending)return;
+        checkedOpeningPermissions=true;
+        ArrayList<String> missing=missingPermissions(true,getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE));
+        if(Build.VERSION.SDK_INT>=33)addIfMissing(missing,Manifest.permission.POST_NOTIFICATIONS);
+        requestMissingPermissions(missing,null);
+    }
+    @Override public void onRequestPermissionsResult(int code,String[] permissions,int[] results){
+        super.onRequestPermissionsResult(code,permissions,results);
+        if(code!=1)return;
+        permissionRequestPending=false;
+        Runnable next=afterPermission;
+        afterPermission=null;
+        startPreview();
+        if(next!=null){
+            boolean granted=results.length>0;
+            for(int i=0;i<results.length;i++){
+                if(Manifest.permission.ACCESS_FINE_LOCATION.equals(permissions[i])
+                        ||Manifest.permission.ACCESS_COARSE_LOCATION.equals(permissions[i]))granted&=hasLocation();
+                else granted&=results[i]==PackageManager.PERMISSION_GRANTED;
+            }
+            if(granted)next.run();
+            else if(results.length>0)Toast.makeText(this,"Permission needed. You can change it in Settings → App permissions.",Toast.LENGTH_LONG).show();
+        }
+        else if(selected!=null&&RunService.current==null&&bluetoothAllowed())monitor(selected);
+    }
     private void startPreview(){
         if(previewListening||!hasLocation()||!"Run".equals(screen))return;
         try{
@@ -239,9 +310,10 @@ public class MainActivity extends Activity implements LocationListener {
     @Override public void onLocationChanged(Location location){if(previewFix==null||LocationManager.GPS_PROVIDER.equals(location.getProvider())||SystemClock.elapsedRealtimeNanos()-previewFix.getElapsedRealtimeNanos()>10000000000L){previewFix=new Location(location);render();}}
     @Override public void onProviderEnabled(String provider){stopPreview();startPreview();}
     @Override public void onProviderDisabled(String provider){render();}
-    @Override protected void onResume(){super.onResume();handler.post(refresh);startPreview();CloudAccounts.refreshReadiness(this);}
+    @Override protected void onResume(){super.onResume();handler.post(refresh);startPreview();CloudAccounts.refreshReadiness(this);requestOpeningPermissions();}
     @Override protected void onPause(){super.onPause();handler.removeCallbacks(refresh);stopScan();stopPreview();if(RunService.current==null||!RunService.current.running)RunHaptics.cancel(this);}
-    @Override protected void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);if("Detail".equals(screen)&&detailFile!=null)state.putString("detail",detailFile.getName());if(pendingExport!=null)state.putString("export",pendingExport.getName());}
+    @Override protected void onStop(){super.onStop();if(!permissionRequestPending&&!isChangingConfigurations())checkedOpeningPermissions=false;}
+    @Override protected void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);if("Detail".equals(screen)&&detailFile!=null)state.putString("detail",detailFile.getName());if(pendingExport!=null)state.putString("export",pendingExport.getName());state.putBoolean("checkedOpeningPermissions",checkedOpeningPermissions);state.putBoolean("permissionRequestPending",permissionRequestPending);}
     @Override protected void onDestroy(){if(map!=null)map.close();background.shutdown();handler.removeCallbacksAndMessages(null);super.onDestroy();}
     @Override public void onBackPressed(){if("Detail".equals(screen))show("History");else if(!"Run".equals(screen))show("Run");else super.onBackPressed();}
     private void monitor(String address){startForegroundService(new Intent(this,RunService.class).putExtra("device",address));}

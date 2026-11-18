@@ -48,8 +48,11 @@ final class CloudAccounts {
         String host="strava".equals(provider)?"www.strava.com":"smashrun".equals(provider)?"secure.smashrun.com":"runalyze.com";if(!"https".equals(uri.getScheme())||!host.equals(uri.getHost()))throw new java.io.IOException();return uri;
     }
     static String complete(Context c,Uri uri)throws Exception{
-        String provider=uri.getLastPathSegment();if(!valid(provider)||uri.getQueryParameter("error")!=null)throw new java.io.IOException();String stored=SecureStore.get(c,"oauth_"+provider);if(stored==null)throw new java.io.IOException();JSONObject pending=new JSONObject(stored);if(pending.getLong("expires")<System.currentTimeMillis())throw new java.io.IOException();
+        String provider=uri.getLastPathSegment();if(!valid(provider))throw new java.io.IOException();
+        String stored=SecureStore.get(c,"oauth_"+provider);
         if("smashrun".equals(provider)){
+            if(stored==null)throw new SmashrunAuth.Failure("There’s no active Smashrun sign-in. Start again from Settings.");
+            JSONObject pending=new JSONObject(stored);
             JSONObject direct=SmashrunAuth.complete(uri.toString(),pending.optString("state"),pending.getLong("expires"),System.currentTimeMillis());
             synchronized(CloudAccounts.class){
                 // Recheck the pending attempt while consuming it, preventing callback replay.
@@ -58,6 +61,8 @@ final class CloudAccounts {
             }
             return provider;
         }
+        if(stored==null||uri.getQueryParameter("error")!=null)throw new java.io.IOException();
+        JSONObject pending=new JSONObject(stored);if(pending.getLong("expires")<System.currentTimeMillis())throw new java.io.IOException();
         SyncHttp.Response response=SyncHttp.json(endpoint("/v1/oauth/finish"),new JSONObject().put("provider",provider).put("ticket",uri.getQueryParameter("ticket")).put("verifier",pending.getString("verifier")));
         if(!response.ok())throw new java.io.IOException();JSONObject tokens=response.json();if(tokens.optString("access_token").isEmpty())throw new java.io.IOException();
         synchronized(CloudAccounts.class){saveConnection(c,provider,tokens);}return provider;

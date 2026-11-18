@@ -16,7 +16,9 @@ public class SmashrunAuthTest {
         assertTrue(url.contains("response_type=token"));
         assertTrue(url.contains("scope=write_activity"));
         assertTrue(url.contains("state=random%2Bstate"));
-        assertTrue(url.contains("redirect_uri=runzone%3A%2F%2Faccounts%2Fsmashrun"));
+        assertTrue(url.contains("redirect_uri=runzone%3A%2F%2Faccounts%2Fsmashrun%3Fattempt%3Drandom%252Bstate&"));
+        assertTrue(SmashrunAuth.authorize("registered","expected").contains(
+                "redirect_uri=runzone%3A%2F%2Faccounts%2Fsmashrun&"));
         assertFalse(url.contains("secret"));
     }
     @Test public void acceptsFragmentAndConvertsExpiryToEpochSeconds()throws Exception{
@@ -30,6 +32,25 @@ public class SmashrunAuthTest {
         rejects(CALLBACK.replace("&state=expected",""),"expected",2000);
         rejects(CALLBACK,"expected",1000);
         rejects(CALLBACK,"",2000);
+    }
+    @Test public void acceptsQueryStateWithFragmentToken()throws Exception{
+        String callback=CALLBACK.replace("#","?state=expected#").replace("&state=expected","");
+        assertEquals("abc+123",SmashrunAuth.complete(callback,"expected",2000,1000).getString("access_token"));
+        rejects(callback,"forged",2000);
+        rejects(CALLBACK.replace("#","?state=expected#"),"expected",2000);
+    }
+    @Test public void acceptsBoundPublicRedirectWhenProviderOmitsState()throws Exception{
+        String callback=CALLBACK.replace("#","?attempt=expected#");
+        String withoutState=callback.replace("&state=expected","");
+        assertEquals("abc+123",SmashrunAuth.complete(withoutState,"expected",2000,1000).getString("access_token"));
+        rejects(withoutState,"forged",2000);
+        rejects(callback.replace("state=expected","state=forged"),"expected",2000);
+        rejects(callback.replace("attempt=expected","attempt=forged"),"expected",2000);
+    }
+    @Test public void reportsDeclinedSignInFromQuery(){
+        SmashrunAuth.Failure failure=assertThrows(SmashrunAuth.Failure.class,()->SmashrunAuth.complete(
+                SmashrunAuth.CALLBACK+"?error=access_denied&state=expected","expected",2000,1000));
+        assertTrue(failure.getMessage().contains("declined"));
     }
     @Test public void rejectsWrongCallbackAndQueryTokens(){
         rejects(CALLBACK.replace("accounts/","other/"),"expected",2000);
