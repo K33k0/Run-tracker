@@ -32,6 +32,8 @@ Set the effort you want to run at. RunZone tracks your route, reads your Bluetoo
 2. Download the `RunZone-vX.Y.Z.apk` file to your phone.
 3. Open it and allow installation from your browser/file manager if Android asks.
 
+RunZone checks for stable releases on launch and roughly once a day while online. Allow notifications to receive a new-release alert. In **Settings → App updates**, tap **Check for updates**, then **Download & install**. The APK downloads through your browser; open it and confirm installation in Android. Background checks may be delayed by Android battery restrictions.
+
 **Requirements:** Android 8.0 or newer. A Bluetooth heart-rate monitor is optional; GPS recording works on its own. Sensors must broadcast the standard Bluetooth LE Heart Rate Service. A smartwatch needs a compatible heart-rate broadcast mode to act as a sensor.
 
 Release APKs use a permanent signing certificate. Each release includes a SHA-256 checksum and the public signing-certificate fingerprint.

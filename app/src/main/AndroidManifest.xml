@@ -22,6 +22,7 @@
         </activity>
         <service android:name=".RunService" android:exported="false" android:foregroundServiceType="location|connectedDevice"/>
         <provider android:name=".ExportProvider" android:authorities="${applicationId}.exports" android:exported="false" android:grantUriPermissions="true"/>
+        <service android:name=".UpdateJob" android:exported="true" android:permission="android.permission.BIND_JOB_SERVICE"/>
         <service android:name=".SyncJob" android:exported="true" android:permission="android.permission.BIND_JOB_SERVICE"/>
     </application>
 </manifest>
