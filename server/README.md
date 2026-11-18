@@ -1,5 +1,7 @@
 # RunZone shared account connections
 
+Smashrun now connects directly on Android and does not use this broker. Current builds use public client ID `client` with callback `runzone://accounts/smashrun`; optionally override with `-PsmashrunClientId=APPROVED_ID`; see [registration](REGISTRATION.md). The legacy Smashrun broker endpoints remain for older APKs. The broker setup below applies to Strava and Runalyze for current builds.
+
 This is RunZone's OAuth service, shared by every installation of the app. Users sign in with their own Smashrun, Runalyze and Strava accounts. They never enter developer IDs, app secrets or personal API tokens into RunZone.
 
 **Current status:** deployed on the existing server at `https://runzone.wtechlab.uk`, behind the existing Cloudflare Tunnel. Local and public HTTPS health checks pass. Provider applications have not yet been registered, and authorization/uploads are not tested against live accounts. The app reads the service's readiness flags and shows connections as pending until credentials are configured. History, recording, auto-pause and TCX exports work independently.
@@ -24,11 +26,11 @@ To roll back code after a future release, read the saved previous target from `s
 1. Hosting is ready at `https://runzone.wtechlab.uk`.
 2. Register one RunZone application with each provider. These credentials belong to RunZone, not to each runner:
    - **Strava:** create the application in [API settings](https://www.strava.com/settings/api). Set its callback domain to your account service's hostname. Review the application's athlete capacity before sharing more widely; capacity is controlled by Strava. Request only `activity:write`.
-   - **Smashrun:** [request credentials for a mobile application](https://api.smashrun.com/v1/documentation). Register the callback below and request `write_activity`. Do not use their personal `client` shortcut for the shared app.
+   - **Smashrun:** [request credentials for a mobile application](https://api.smashrun.com/v1/documentation). Register the callback below and request `write_activity`. Current Android builds default to user-level `client` authentication; a registered mobile app ID can override it.
    - **Runalyze:** [apply for the public application API](https://runalyze.com/doc-api), providing RunZone's description, callback URL and logo. Request `activity_push`.
 3. Register these exact callbacks:
    - `https://runzone.wtechlab.uk/oauth/callback/strava`
-   - `https://runzone.wtechlab.uk/oauth/callback/smashrun`
+   - `runzone://accounts/smashrun` (direct mobile flow; public ID supplied at build time)
    - `https://runzone.wtechlab.uk/oauth/callback/runalyze`
 4. Configure environment variables from [.env.example](.env.example). Keep all client secrets on the server. Never commit `.env` or place a client secret in Gradle, the APK, the Android resources or a public URL.
 5. Use Node 22+ and run `node --env-file=.env index.mjs`, behind an HTTPS reverse proxy to the loopback listener on port 8787. Ensure the configured `PUBLIC_URL` is the externally visible HTTPS origin. It must have no path/query/fragment. Use a process supervisor, restart on failure, disable request-body logging and redact OAuth callback query strings from proxy/access logs.

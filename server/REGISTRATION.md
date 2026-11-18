@@ -17,14 +17,14 @@ Store the issued values in `STRAVA_CLIENT_ID` and `STRAVA_CLIENT_SECRET` on the 
 
 ## Smashrun
 
-Use [Smashrun's application registration link](https://api.smashrun.com/v1/documentation) to request credentials for RunZone as a mobile application.
+Current builds use Smashrun user-level authentication with the public client ID `client`. No approval or RunZone server is needed for this mode. Smashrun recommends requesting a registered API key for mobile apps; the pending registration can be used later. See [Smashrun documentation](https://api.smashrun.com/v1/documentation).
 
 - Description: Android GPS running tracker with Bluetooth heart-rate monitoring, configurable zones and user-authorized uploads of the user's own runs.
-- Callback: `https://runzone.wtechlab.uk/oauth/callback/smashrun`
+- Callback: `runzone://accounts/smashrun`
 - Requested scope: `write_activity`.
-- This is the shared application's authorization-code flow, with its secret held on RunZone's account service. It does not use the personal `client` shortcut.
+- Request the mobile implicit flow (`response_type=token`). Smashrun sign-in and uploads happen directly on the phone, with no RunZone server. The default build uses the user-level `client` ID.
 
-Store the issued values in `SMASHRUN_CLIENT_ID` and `SMASHRUN_CLIENT_SECRET`.
+Build normally for user-level access, or override with `./gradlew -PsmashrunClientId=APPROVED_ID assembleDebug` once approved. The client ID is public. Do not put a client secret in the APK. Users sign in again when their token expires. Verify the custom callback above with a live user-level login before distributing. User-level access is limited to 250 requests/hour and requires reauthentication at most every 60 days (possibly sooner).
 
 ## Runalyze
 
@@ -40,7 +40,7 @@ Store the issued values in `RUNALYZE_CLIENT_ID` and `RUNALYZE_CLIENT_SECRET`.
 
 On the server, edit `$HOME/apps/runzone/shared/service.env` using your SSH editor. Keep the file owner-only (`600`). Do not put credentials in the Android app, the repository or chat.
 
-After entering credentials for any provider:
+For Strava and Runalyze, after entering server credentials:
 
 ```sh
 systemctl --user restart runzone-accounts.service
@@ -49,4 +49,4 @@ curl --fail --silent https://runzone.wtechlab.uk/health
 
 The provider's flag should change from `false` to `true`. The Android app refreshes availability when opened or when Settings is shown (30-second cache), so no new APK is required just to activate a provider. First test authorizing your own account and syncing a real saved run. Confirm its GPS, timing and heart rate on the destination service before distributing to more users.
 
-**Registration requests have not been submitted and no live provider authorization/upload has been performed.** Credentials, approval and each provider's user limits are external prerequisites; the hosting service is already running.
+**Smashrun approval is pending and live provider authorization/upload remains unverified.** Credentials, approval and each provider's user limits are external prerequisites; the hosting service is already running.

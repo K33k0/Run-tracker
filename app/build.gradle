@@ -11,6 +11,7 @@ android {
         applicationId 'com.runzone'; minSdk 26; targetSdk 35
         versionCode providers.gradleProperty('releaseVersionCode').map { it.toInteger() }.getOrElse(3)
         versionName providers.gradleProperty('releaseVersion').getOrElse('1.2')
+        buildConfigField 'String', 'SMASHRUN_CLIENT_ID', groovy.json.JsonOutput.toJson(project.findProperty('smashrunClientId') ?: 'client')
         buildConfigField 'String', 'OAUTH_BASE_URL', groovy.json.JsonOutput.toJson(project.findProperty('oauthBaseUrl') ?: '')
     }
     buildFeatures { buildConfig true }
