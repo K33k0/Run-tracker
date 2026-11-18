@@ -21,20 +21,22 @@ public class LiveMapView extends View {
     private final ArrayList<Location> route=new ArrayList<>();
     private Location position;
     private double latitude,longitude;
-    private int zoom=16;
+    private int zoom=18;
+    private boolean routeOverview;
     private boolean centered, follow=true,closed;
     private float touchX,touchY;
     private final ScaleGestureDetector scale;
     private float scaleAmount=1;
     private String emptyMessage="Allow location to find your starting point";
     public void fitRoute(List<Location> points){
-        route.clear();route.addAll(points);emptyMessage="No GPS route was recorded for this run";follow=false;
+        route.clear();route.addAll(points);emptyMessage="No GPS route was recorded for this run";follow=false;routeOverview=true;
         post(()->{
             if(closed)return;Location first=null;double minX=Double.MAX_VALUE,maxX=-Double.MAX_VALUE,minY=Double.MAX_VALUE,maxY=-Double.MAX_VALUE;
             for(Location point:route){if(point==null)continue;if(first==null)first=point;double lon=first.getLongitude()+(((point.getLongitude()-first.getLongitude()+180)%360+360)%360-180);double x=MapProjection.x(lon,19),y=MapProjection.y(point.getLatitude(),19);minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);position=point;}
             if(first==null){centered=false;invalidate();return;}
-            zoom=19;while(zoom>3&&((maxX-minX)/Math.pow(2,19-zoom)>getWidth()-dp(64)||(maxY-minY)/Math.pow(2,19-zoom)>getHeight()-dp(64)))zoom--;
-            if(route.size()==1)zoom=16;longitude=MapProjection.longitude((minX+maxX)/2,19);latitude=MapProjection.latitude((minY+maxY)/2,19);centered=true;invalidate();
+            if(getWidth()<=0||getHeight()<=0)return;
+            zoom=MapProjection.routeZoom(maxX-minX,maxY-minY,getWidth()-dp(64),getHeight()-dp(64));
+            longitude=MapProjection.longitude((minX+maxX)/2,19);latitude=MapProjection.latitude((minY+maxY)/2,19);centered=true;invalidate();
         });
     }
     public LiveMapView(Context context){
@@ -46,11 +48,32 @@ public class LiveMapView extends View {
         });
     }
     public void update(Location fix,List<Location> points){
-        if(fix!=null){ position=new Location(fix); if(!centered||follow){ latitude=fix.getLatitude(); longitude=fix.getLongitude(); centered=true; } }
-        route.clear(); if(points!=null) route.addAll(points); invalidate();
+        if(fix!=null){ position=new Location(fix); if(!centered){ latitude=fix.getLatitude(); longitude=fix.getLongitude(); centered=true; } }
+        route.clear(); if(points!=null) route.addAll(points);
+        if(follow)frameLiveRoute();
+        invalidate();
     }
-    public void recenter(){ follow=true; if(position!=null){ latitude=position.getLatitude(); longitude=position.getLongitude(); centered=true; } invalidate(); }
-    public void zoomBy(int amount){ zoom=Math.max(3,Math.min(19,zoom+amount)); invalidate(); }
+    private void frameLiveRoute(){
+        if(getWidth()<=0||getHeight()<=0)return;
+        Location anchor=position;
+        if(anchor==null)for(Location point:route)if(point!=null){anchor=point;break;}
+        if(anchor==null)return;
+        double minX=MapProjection.x(anchor.getLongitude(),19),maxX=minX,minY=MapProjection.y(anchor.getLatitude(),19),maxY=minY;
+        for(Location point:route){
+            if(point==null)continue;
+            double lon=anchor.getLongitude()+(((point.getLongitude()-anchor.getLongitude()+180)%360+360)%360-180);
+            double x=MapProjection.x(lon,19),y=MapProjection.y(point.getLatitude(),19);
+            minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);
+        }
+        zoom=MapProjection.routeZoom(maxX-minX,maxY-minY,getWidth()-dp(64),getHeight()-dp(64));
+        longitude=MapProjection.longitude((minX+maxX)/2,19);latitude=MapProjection.latitude((minY+maxY)/2,19);centered=true;
+    }
+    @Override protected void onSizeChanged(int w,int h,int oldw,int oldh){
+        super.onSizeChanged(w,h,oldw,oldh);
+        if(follow)frameLiveRoute();else if(routeOverview)fitRoute(new ArrayList<>(route));
+    }
+    public void recenter(){ follow=true;routeOverview=false;frameLiveRoute();invalidate(); }
+    public void zoomBy(int amount){ follow=false;routeOverview=false;zoom=Math.max(3,Math.min(19,zoom+amount)); invalidate(); }
     public void close(){ closed=true; network.shutdownNow(); }
     @Override protected void onDraw(Canvas canvas){
         super.onDraw(canvas); canvas.drawColor(Color.rgb(222,231,218));
@@ -119,7 +142,7 @@ public class LiveMapView extends View {
     @Override public boolean onTouchEvent(MotionEvent event){
         scale.onTouchEvent(event);
         switch(event.getActionMasked()){
-            case MotionEvent.ACTION_DOWN: touchX=event.getX();touchY=event.getY();getParent().requestDisallowInterceptTouchEvent(true);return true;
+            case MotionEvent.ACTION_DOWN: routeOverview=false;touchX=event.getX();touchY=event.getY();getParent().requestDisallowInterceptTouchEvent(true);return true;
             case MotionEvent.ACTION_MOVE:
                 if(!scale.isInProgress()&&event.getPointerCount()==1&&centered){ follow=false; double x=MapProjection.x(longitude,zoom)+touchX-event.getX(),y=MapProjection.y(latitude,zoom)+touchY-event.getY(); longitude=MapProjection.longitude(x,zoom); longitude=((longitude+180)%360+360)%360-180; latitude=Math.max(-85,Math.min(85,MapProjection.latitude(y,zoom))); invalidate(); }
                 touchX=event.getX();touchY=event.getY();return true;

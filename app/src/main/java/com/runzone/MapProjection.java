@@ -3,6 +3,13 @@ package com.runzone;
 /** Web Mercator coordinates, independent of Android for boundary testing. */
 public final class MapProjection {
     private MapProjection() {}
+    /** Closest street-level zoom that contains the route; spans use zoom-19 pixels. */
+    public static int routeZoom(double spanX,double spanY,double width,double height) {
+        int zoom=18;
+        while(zoom>3&&(spanX/Math.pow(2,19-zoom)>Math.max(1,width)
+                ||spanY/Math.pow(2,19-zoom)>Math.max(1,height)))zoom--;
+        return zoom;
+    }
     public static double x(double longitude,int zoom) { return (longitude+180)/360*(256L<<zoom); }
     public static double y(double latitude,int zoom) {
         double lat=Math.toRadians(Math.max(-85.05112878,Math.min(85.05112878,latitude)));
