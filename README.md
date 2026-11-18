@@ -18,9 +18,10 @@ Set the effort you want to run at. RunZone tracks your route, reads your Bluetoo
 
 | Feature | What you get |
 | --- | --- |
-| **Heart-rate zone coaching** | Five editable target profiles, with different sound/vibration warnings above and below your active range. |
+| **Heart-rate zone coaching** | Five adjoining zones with shared editable boundaries and a clearly marked target; sound/vibration warnings above and below your active range. |
 | **Live BPM before a run** | Connect your Bluetooth sensor and see your heart rate immediately. No running timer needed. |
 | **GPS tracking and a live map** | Route recording, distance, duration and average pace, with street maps, zoom and recenter controls. |
+| **Distance target** | Set an optional kilometre target from the Run screen or Settings. A one-time sound and three long vibrations mark reaching it; recording continues. |
 | **Optional auto-pause** | Choose a pace threshold. Recording pauses after sustained slower movement and resumes when you speed up. |
 | **Run history** | Open a saved run for its route, active/elapsed time, pace, heart-rate stats and chart. New recordings include kilometre splits. |
 | **TCX export** | Save or share a workout file for Smashrun, Runalyze, Strava or another compatible service. |
@@ -46,17 +47,28 @@ The release workflow never uninstalls or changes the app on your phone. See [rel
 
 ## Your first run
 
-1. **Set your target:** open **Settings → Heart-rate zones**, choose a profile and enter your lower/upper BPM limits.
+1. **Set your target:** open **Settings → Heart-rate zones**, choose your target and edit the four shared upper boundaries. All five ranges appear together and cover 30–240 BPM without gaps or overlaps. You can also tap the target on the Run screen.
 2. **Connect your sensor:** wear/wake your monitor, tap **Sensor** on the Run screen and select it. Live BPM should appear before you start.
 3. **Allow location:** use the map's recenter button and grant location permission. Precise location is needed for run recording; Bluetooth connection asks for Nearby devices permission on newer Android versions.
-4. **Start running:** tap **Start run**. Pause/resume whenever you need to, then **Finish → Save run**.
-5. **Review it:** open **History**, select your run and scroll to **Sync & Export** to save or share a TCX file.
+4. **Start running:** tap **Start run**. Pause/resume whenever you need to, then **Finish → Save run**, or choose **Discard run** and confirm to stop without saving.
+5. **Check screen-off readiness:** Settings shows background restrictions, battery optimisation, phone Battery Saver and notification status. Starting a run also prompts when these checks need attention, with an option to start anyway. Set RunZone battery usage to Unrestricted / Don’t optimise; manufacturer sleeping-app and auto-start restrictions still need a manual check.
+6. **Review it:** open **History**, select your run and scroll to **Sync & Export** to save or share a TCX file.
 
 Keep media volume audible for the warning tones. Zone and location controls live in Settings, so the Run screen stays focused on your workout.
 
 ### How the zone warnings work
 
-Your lower and upper limits are inclusive. After five continuous seconds outside them, RunZone sounds and vibrates a warning, repeating every twenty seconds while you remain outside the target. Previewing your BPM or pausing a run does not trigger coaching alerts. A sensor reading that is more than ten seconds old is shown as missing.
+Your lower and upper limits are inclusive. The selected zone is named on the Run screen and highlighted on the five-zone bar. Zone changes are locked until the current run finishes or is discarded. Older independent profiles are converted to shared boundaries, preserving the selected BPM range where possible (its zone number may change); otherwise the starting ranges are restored. Review your target after upgrading. After five continuous seconds outside them, RunZone sounds and vibrates a warning, repeating every twenty seconds while you remain outside the target. Previewing your BPM or pausing a run does not trigger coaching alerts. A sensor reading that is more than ten seconds old is shown as missing.
+
+**Settings → BPM-paced zone beeps** is off by default. Enable it for short, distinct above/below-target tones paced to your current BPM. These replace the periodic warning sound while enabled; vibration reminders remain. Beeps stop immediately on an in-range reading, manual pause, missing sensor data, or disabling the option. Cadence follows reported BPM, rather than individual detected heartbeats.
+
+### Distance targets and stronger vibrations
+
+Tap the distance target on the Run screen (or **Settings → Distance target**). Choose 5 km, 10 km, 21.1 km or enter 0.01–1000 km. **No target** clears it. The target is reused for future runs and stays fixed during an active run. The Run screen shows the remaining distance and confirms when the target is reached.
+
+Crossing the target using recorded GPS distance plays a confirmation tone and three one-second vibration pulses once. Recording continues until you finish or discard the run. Paused movement does not count. Target feedback briefly takes priority over zone alerts and BPM-paced beeps.
+
+Zone vibrations now use three separated 500 ms pulses below target or 800 ms pulses above target, requesting maximum amplitude where supported. **Settings → Test strong vibrations** previews each pattern before a run. Phone hardware and system vibration settings still determine the physical strength; test with your usual phone placement. Sound uses media volume.
 
 ### Auto-pause
 

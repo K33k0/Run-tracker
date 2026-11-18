@@ -19,7 +19,7 @@ import java.util.*;
 public class MainActivity extends Activity implements LocationListener {
     private static final int BG=0xff101819,CARD=0xff1b2627,LINE=0xff30403e,TEXT=0xfff2f5ee,MUTED=0xff9eafaa,LIME=0xffc2f970;
     private LinearLayout root,content;
-    private TextView heart,status,sensorLabel,gpsLabel,distance,duration,pace,target,start,finish;
+    private TextView heart,status,sensorLabel,gpsLabel,distance,duration,pace,target,start,finish,backgroundLabel,distanceTarget;
     private ZoneTrack zoneTrack;
     private LiveMapView map;
     private String screen="Run",selected;
@@ -38,7 +38,7 @@ public class MainActivity extends Activity implements LocationListener {
     private final Runnable refresh=new Runnable(){ public void run(){render();handler.postDelayed(this,1000);}};
 
     @Override public void onCreate(Bundle state){
-        super.onCreate(state);locations=getSystemService(LocationManager.class);
+        super.onCreate(state);ensureZones();locations=getSystemService(LocationManager.class);
         selected=getSharedPreferences("settings",0).getString("device",null);
         if(state!=null&&state.getString("export")!=null)pendingExport=new java.io.File(new java.io.File(getCacheDir(),"exports"),state.getString("export"));
         if(state!=null&&state.getString("detail")!=null)openRun(new java.io.File(new java.io.File(getFilesDir(),"runs"),state.getString("detail")));else show("Run");
@@ -77,11 +77,11 @@ public class MainActivity extends Activity implements LocationListener {
     private void home(){
         LinearLayout header=row();header.addView(bold("r/",27,LIME));TextView name=bold("runzone",24,TEXT);name.setPadding(dp(8),0,0,0);weighted(header,name);
         header.addView(pill("Settings",CARD,MUTED,v->show("Settings")));content.addView(header);gap(content,24);
-        smallTitle(content,"TRAIN WITH INTENTION");gap(content,8);content.addView(bold("Find your rhythm.",29,TEXT));gap(content,20);
+        smallTitle(content,"TRAIN WITH INTENTION");gap(content,8);content.addView(bold("Find your rhythm.",29,TEXT));gap(content,12);distanceTarget=pill("Set distance target  ›",CARD,LIME,v->distanceTarget());content.addView(distanceTarget);gap(content,16);
         LinearLayout heartCard=card(),top=row();TextView live=bold("♥  LIVE HEART RATE",11,LIME);live.setLetterSpacing(.1f);weighted(top,live);
         TextView sensor=pill("Sensor  ›",0xff2a3835,TEXT,v->devices());sensor.setMinHeight(dp(36));sensor.setPadding(dp(12),dp(8),dp(12),dp(8));top.addView(sensor);heartCard.addView(top);gap(heartCard,8);
         LinearLayout numbers=row();numbers.setGravity(Gravity.BOTTOM);heart=bold("—",68,TEXT);numbers.addView(heart);TextView unit=text("bpm",17,MUTED);unit.setPadding(dp(8),0,0,dp(12));numbers.addView(unit);
-        LinearLayout zone=column();zone.setGravity(Gravity.RIGHT);target=bold("120–150",17,TEXT);target.setGravity(Gravity.RIGHT);zone.addView(target);TextView caption=text("TARGET BPM",10,MUTED);caption.setGravity(Gravity.RIGHT);caption.setLetterSpacing(.08f);zone.addView(caption);weighted(numbers,zone);heartCard.addView(numbers);
+        LinearLayout zone=column();zone.setGravity(Gravity.RIGHT);target=bold("120–150",17,TEXT);target.setGravity(Gravity.RIGHT);zone.addView(target);TextView caption=text("TARGET ZONE · BPM  ›",10,LIME);zone.setOnClickListener(v->zones());zone.setContentDescription("Change target heart-rate zone");caption.setGravity(Gravity.RIGHT);caption.setLetterSpacing(.08f);zone.addView(caption);weighted(numbers,zone);heartCard.addView(numbers);
         gap(heartCard,8);zoneTrack=new ZoneTrack();heartCard.addView(zoneTrack,new LinearLayout.LayoutParams(-1,dp(12)));gap(heartCard,12);
         status=text("Connect a sensor to see your live BPM",13,MUTED);heartCard.addView(status);gap(heartCard,6);sensorLabel=text("No run needed. Just connect and wear your sensor.",11,MUTED);heartCard.addView(sensorLabel);content.addView(heartCard);gap(content,16);
         FrameLayout mapCard=new FrameLayout(this);mapCard.setBackground(shape(0xffdee7da,22));mapCard.setClipToOutline(true);
@@ -104,13 +104,13 @@ public class MainActivity extends Activity implements LocationListener {
     private TextView mapControl(String symbol,View.OnClickListener listener){TextView t=pill(symbol,0xf5f8fbf4,0xff294333,listener);t.setTextSize(22);t.setPadding(0,dp(5),0,dp(5));t.setMinHeight(dp(42));return t;}
     private TextView stat(LinearLayout parent,String title,String value,String unit){LinearLayout c=column();c.setGravity(Gravity.CENTER);TextView label=bold(title,9,MUTED);label.setLetterSpacing(.08f);c.addView(label);gap(c,8);TextView number=bold(value,25,TEXT);c.addView(number);gap(c,5);c.addView(text(unit,10,MUTED));weighted(parent,c);return number;}
     private void render(){
-        if("Settings".equals(screen)){for(Map.Entry<String,TextView> label:settingsAccountLabels.entrySet())label.getValue().setText(CloudAccounts.summary(this,label.getKey()));return;}
+        if("Settings".equals(screen)){if(backgroundLabel!=null)backgroundLabel.setText(backgroundSummary());for(Map.Entry<String,TextView> label:settingsAccountLabels.entrySet())label.getValue().setText(CloudAccounts.summary(this,label.getKey()));return;}
         if("Detail".equals(screen)&&detailFile!=null){for(Map.Entry<String,TextView> label:syncLabels.entrySet())label.getValue().setText(CloudSync.status(this,detailFile.getName(),label.getKey()));return;}
         if(!"Run".equals(screen)||heart==null)return;
-        RunService s=RunService.current;boolean running=s!=null&&s.running;
+        RunService s=RunService.current;boolean running=s!=null&&s.running;distanceTarget.setText(distanceTargetLabel());
         int low=getSharedPreferences("settings",0).getInt("low",120),high=getSharedPreferences("settings",0).getInt("high",150),bpm=s==null?-1:s.freshBpm();
         int zone=bpm>0?HeartRate.zone(bpm,low,high):0;boolean alert=running&&ZoneCoach.enabled(running,s.paused,s.autoPaused)&&bpm>0&&zone!=0;
-        heart.setText(bpm>0?Integer.toString(bpm):"—");heart.setTextColor(alert?0xffffbc8a:TEXT);target.setText(String.format(Locale.getDefault(),"%d–%d",low,high));zoneTrack.update(bpm,low,high);
+        heart.setText(bpm>0?Integer.toString(bpm):"—");heart.setTextColor(alert?0xffffbc8a:TEXT);target.setText(String.format(Locale.getDefault(),"Zone %d\n%d–%d",getSharedPreferences("settings",0).getInt("profile",2)+1,low,high));zoneTrack.update(bpm,low,high);
         status.setText(running?(s.paused?(s.autoPaused?"Auto-paused • move faster to resume":"Run paused • take a breath"):bpm<=0?"Waiting for a live heart-rate reading":zone>0?"Above target • ease your pace":zone<0?"Below target • pick up your pace":"In your zone • keep this rhythm"):bpm>0?"Live preview • alerts start when you run":"Connect a sensor to see your live BPM");
         status.setTextColor(alert?0xffffbc8a:bpm>0?LIME:MUTED);sensorLabel.setText(s==null?"No run needed. Just connect and wear your sensor.":s.sensor);
         long seconds=running?s.elapsed()/1000:0;double meters=running?s.meters:0;distance.setText(String.format(Locale.getDefault(),"%.2f",meters/1000));
@@ -122,17 +122,29 @@ public class MainActivity extends Activity implements LocationListener {
         map.update(fix,running?s.route:Collections.emptyList());
     }
     private void begin(){
+        if(!permissions(true,selected!=null,this::begin))return;
+        if(!backgroundReady()){
+            new AlertDialog.Builder(this).setTitle("Check background recording").setMessage(backgroundSummary()+"\n\nFor screen-off runs, allow background usage and set RunZone battery usage to Unrestricted / Don’t optimise. Some phones also have sleeping-app or auto-start settings.")
+                .setPositiveButton("Review settings",(d,w)->backgroundSettings()).setNeutralButton("Start anyway",(d,w)->startRun()).setNegativeButton("Cancel",null).show();return;
+        }
+        startRun();
+    }
+    private void startRun(){
         if(!permissions(true,selected!=null,this::begin))return;Intent intent=new Intent(this,RunService.class).setAction("START");
         if(RunService.current==null&&selected!=null)intent.putExtra("device",selected);startForegroundService(intent);handler.postDelayed(this::render,200);
     }
     private void finishSession(){RunService s=RunService.current;if(s==null||!s.running)return;
-        new AlertDialog.Builder(this).setTitle("Save your run?").setMessage("Your route, distance and active time will be saved. Your heart-rate sensor stays connected.").setPositiveButton("Save run",(d,w)->{if(s.save()){s.finishRun();Toast.makeText(this,"Run saved. Nice work.",Toast.LENGTH_SHORT).show();render();}else Toast.makeText(this,"Couldn't save. Your run is still active; try again.",Toast.LENGTH_LONG).show();}).setNegativeButton("Keep running",null).show();
+        new AlertDialog.Builder(this).setTitle("Save your run?").setMessage("Your route, distance and active time will be saved. Your heart-rate sensor stays connected.").setPositiveButton("Save run",(d,w)->{if(s.save()){s.finishRun();Toast.makeText(this,"Run saved. Nice work.",Toast.LENGTH_SHORT).show();render();}else Toast.makeText(this,"Couldn't save. Your run is still active; try again.",Toast.LENGTH_LONG).show();}).setNeutralButton("Discard run",(d,w)->new AlertDialog.Builder(this).setTitle("Discard this run?").setMessage("Stop recording without saving? This run cannot be recovered.").setPositiveButton("Discard run",(confirm,which)->{if(s.running){s.discardRun();render();Toast.makeText(this,"Run discarded",Toast.LENGTH_SHORT).show();}}).setNegativeButton("Keep run",null).show()).setNegativeButton("Keep running",null).show();
     }
     private void settings(){
         heading("Settings","Make RunZone work for the way you train.");smallTitle(content,"TRAINING");gap(content,12);
         LinearLayout training=card();int low=getSharedPreferences("settings",0).getInt("low",120),high=getSharedPreferences("settings",0).getInt("high",150);
         settingRow(training,"Heart-rate zones","Zone "+(getSharedPreferences("settings",0).getInt("profile",0)+1)+" · "+low+"–"+high+" bpm",v->zones());
+        gap(training,18);settingRow(training,"Distance target",distanceTargetLabel(),v->distanceTarget());
+        gap(training,18);settingRow(training,"Test strong vibrations","Three long pulses at maximum supported strength",v->testHaptics());
         gap(training,18);android.content.SharedPreferences preferences=getSharedPreferences("settings",0);
+        Switch beeps=new Switch(this);beeps.setText("BPM-paced zone beeps");beeps.setTextSize(17);beeps.setTextColor(TEXT);beeps.setChecked(preferences.getBoolean("zoneBeeps",false));beeps.setOnCheckedChangeListener((button,enabled)->{preferences.edit().putBoolean("zoneBeeps",enabled).apply();if(RunService.current!=null)RunService.current.updateZoneBeeps();});training.addView(beeps);
+        training.addView(text("Beep at your BPM above or below target; stop when back in range.",13,MUTED));gap(training,18);
         Switch auto=new Switch(this);auto.setText("Auto-pause");auto.setTextSize(17);auto.setTextColor(TEXT);auto.setChecked(preferences.getBoolean("autoPause",false));auto.setOnCheckedChangeListener((button,enabled)->preferences.edit().putBoolean("autoPause",enabled).apply());training.addView(auto);
         gap(training,12);settingRow(training,"Pause when slower than",paceLabel(preferences.getInt("pausePace",720))+" min/km · 10-second delay",v->autoPausePace());
         content.addView(training);gap(content,22);smallTitle(content,"AUTO SYNC");gap(content,12);
@@ -144,6 +156,9 @@ public class MainActivity extends Activity implements LocationListener {
         content.addView(connections);gap(content,22);smallTitle(content,"LOCATION");gap(content,12);
         LinearLayout location=card();settingRow(location,"Location settings","Manage your phone’s GPS",v->startActivity(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)));
         gap(location,18);settingRow(location,"App permissions","Precise location & nearby devices",v->startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName()))));content.addView(location);
+        gap(content,22);smallTitle(content,"BACKGROUND RECORDING");gap(content,12);
+        LinearLayout battery=card();backgroundLabel=settingRow(battery,"Screen-off readiness",backgroundSummary(),v->backgroundSettings());
+        gap(battery,12);battery.addView(text("Allow background usage and choose Unrestricted / Don’t optimise for RunZone. Check your phone’s sleeping-app and auto-start settings too. These checks cannot verify every manufacturer’s restrictions.",13,MUTED));content.addView(battery);
         gap(content,24);TextView note=text("YOUR ZONE, YOUR PACE\n\nAlerts sound and vibrate after 5 seconds outside your active target, repeating every 20 seconds during a run, including auto-pause. Manual pause silences alerts. Keep media volume audible.\n\nAuto-pause uses reliable GPS speed. It pauses after 10 seconds below your pace threshold and resumes after 3 seconds at or above it. Manual pauses always need manual resume.\n\nMaps use an internet connection. Recordings stay on your phone unless you export them or connect an account for sync.",13,MUTED);note.setLineSpacing(dp(4),1);content.addView(note);gap(content,20);content.addView(text("RUNZONE  /  VERSION "+BuildConfig.VERSION_NAME,10,MUTED));
     }
     private TextView settingRow(LinearLayout parent,String title,String subtitle,View.OnClickListener listener){LinearLayout r=row(),labels=column();labels.addView(bold(title,17,TEXT));gap(labels,6);TextView sub=text(subtitle,12,MUTED);sub.setLineSpacing(dp(3),1);labels.addView(sub);weighted(r,labels);TextView arrow=text("›",27,LIME);arrow.setPadding(dp(12),dp(8),0,dp(8));r.addView(arrow);r.setMinimumHeight(dp(54));r.setOnClickListener(listener);parent.addView(r);return sub;}
@@ -219,7 +234,7 @@ public class MainActivity extends Activity implements LocationListener {
     @Override public void onProviderEnabled(String provider){stopPreview();startPreview();}
     @Override public void onProviderDisabled(String provider){render();}
     @Override protected void onResume(){super.onResume();handler.post(refresh);startPreview();CloudAccounts.refreshReadiness(this);}
-    @Override protected void onPause(){super.onPause();handler.removeCallbacks(refresh);stopScan();stopPreview();}
+    @Override protected void onPause(){super.onPause();handler.removeCallbacks(refresh);stopScan();stopPreview();if(RunService.current==null||!RunService.current.running)RunHaptics.cancel(this);}
     @Override protected void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);if("Detail".equals(screen)&&detailFile!=null)state.putString("detail",detailFile.getName());if(pendingExport!=null)state.putString("export",pendingExport.getName());}
     @Override protected void onDestroy(){if(map!=null)map.close();background.shutdown();handler.removeCallbacksAndMessages(null);super.onDestroy();}
     @Override public void onBackPressed(){if("Detail".equals(screen))show("History");else if(!"Run".equals(screen))show("Run");else super.onBackPressed();}
@@ -236,17 +251,120 @@ public class MainActivity extends Activity implements LocationListener {
             handler.postDelayed(()->{if(dialog.isShowing()){stopScan();dialog.setTitle(found.isEmpty()?"No sensors found • wake your sensor and retry":"Choose your sensor");}},15000);
         }catch(SecurityException e){stopScan();Toast.makeText(this,"Nearby devices permission needed. Check app settings.",Toast.LENGTH_LONG).show();}
     }
+    private String distanceTargetLabel(){
+        RunService service=RunService.current;boolean running=service!=null&&service.running;
+        int meters=running?service.distanceGoal.targetMeters():getSharedPreferences("settings",0).getInt("distanceTargetMeters",0);
+        if(meters<=0)return running?"No distance target · keep running":"Set distance target  ›";
+        String goal=String.format(Locale.getDefault(),"%.3f km",meters/1000.0);
+        if(running)return service.distanceGoal.reached()?goal+" reached · still recording":String.format(Locale.getDefault(),"Target %s · %.0f m to go",goal,Math.ceil(Math.max(0,meters-service.meters)));
+        return "Target "+goal+" · tap to change  ›";
+    }
+    private void distanceTarget(){
+        RunService service=RunService.current;
+        if(service!=null&&service.running){new AlertDialog.Builder(this).setTitle("Distance target").setMessage(distanceTargetLabel()+"\n\nYour target stays fixed for this run. Reaching it plays a sound and three long vibrations; recording continues until you finish.").setPositiveButton("OK",null).show();return;}
+        LinearLayout box=column();box.setPadding(dp(24),dp(8),dp(24),dp(8));
+        box.addView(text("Get a sound and three long vibrations when you reach your distance. Your run keeps recording. This target is reused until you change or clear it.",14,MUTED));gap(box,16);
+        box.addView(text("Distance in kilometres",14,TEXT));EditText input=new EditText(this);input.setTextColor(TEXT);input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);input.setSingleLine(true);input.setHint("e.g. 5.00");input.setContentDescription("Target distance in kilometres");
+        int stored=getSharedPreferences("settings",0).getInt("distanceTargetMeters",0);if(stored>0)input.setText(String.format(Locale.ROOT,"%.3f",stored/1000.0));box.addView(input);
+        LinearLayout presets=row();for(String km:new String[]{"5","10","21.1"})weighted(presets,pill(km+" km",CARD,LIME,v->{input.setText(km);input.setSelection(input.length());}));box.addView(presets);
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Set distance target").setView(box).setPositiveButton("Set target",null).setNeutralButton("No target",(d,w)->{getSharedPreferences("settings",0).edit().remove("distanceTargetMeters").apply();show(screen);}).setNegativeButton("Cancel",null).create();
+        dialog.setOnShowListener(d->dialog.getButton(-1).setOnClickListener(v->{try{
+            double km=Double.parseDouble(input.getText().toString().trim().replace(',','.'));
+            if(!Double.isFinite(km)||km<0.01||km>1000)throw new IllegalArgumentException();
+            int meters=(int)Math.round(km*1000);getSharedPreferences("settings",0).edit().putInt("distanceTargetMeters",meters).apply();dialog.dismiss();show(screen);
+        }catch(IllegalArgumentException e){input.setError("Enter 0.01–1000 km, or choose No target");}}));dialog.show();
+    }
+    private void testHaptics(){
+        if(RunService.current!=null&&RunService.current.running){Toast.makeText(this,"Finish your run before testing vibrations",Toast.LENGTH_LONG).show();return;}
+        new AlertDialog.Builder(this).setTitle("Test strong vibrations").setItems(new String[]{"Below zone · three half-second pulses","Above zone · three longer pulses","Distance reached · three one-second pulses"},(d,which)->{
+            if(!RunHaptics.play(this,which==0?RunHaptics.BELOW:which==1?RunHaptics.ABOVE:RunHaptics.DISTANCE))Toast.makeText(this,"This device has no vibration motor",Toast.LENGTH_LONG).show();
+        }).setNegativeButton("Cancel",null).show();
+    }
+    private boolean backgroundRestricted(){return Build.VERSION.SDK_INT>=28&&getSystemService(ActivityManager.class).isBackgroundRestricted();}
+    private boolean backgroundReady(){PowerManager power=getSystemService(PowerManager.class);return !backgroundRestricted()&&!power.isPowerSaveMode()&&power.isIgnoringBatteryOptimizations(getPackageName())&&getSystemService(NotificationManager.class).areNotificationsEnabled();}
+    private String backgroundSummary(){
+        PowerManager power=getSystemService(PowerManager.class);
+        return (backgroundRestricted()?"Background usage restricted":"No Android background restriction detected")+"\n"+
+            (power.isIgnoringBatteryOptimizations(getPackageName())?"Battery optimisation off for RunZone":"Battery optimisation on for RunZone")+"\n"+
+            (power.isPowerSaveMode()?"Phone Battery Saver on":"Phone Battery Saver off")+"\n"+
+            (getSystemService(NotificationManager.class).areNotificationsEnabled()?"Recording notifications enabled":"Recording notifications disabled");
+    }
+    private void backgroundSettings(){
+        new AlertDialog.Builder(this).setTitle("Background recording settings").setMessage(backgroundSummary()+"\n\nReturn here after changing settings to check again.")
+            .setPositiveButton("App settings",(d,w)->openSystemSettings(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName()))))
+            .setNeutralButton("Battery settings",(d,w)->openSystemSettings(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)))
+            .setNegativeButton("Close",null).show();
+    }
+    private void openSystemSettings(Intent intent){try{startActivity(intent);}catch(ActivityNotFoundException e){Toast.makeText(this,"Open your phone’s Settings → Apps → RunZone → Battery",Toast.LENGTH_LONG).show();}}
+    private int[] zoneEnds(){
+        android.content.SharedPreferences prefs=getSharedPreferences("settings",0);int[] ends=ZoneRanges.defaults();
+        for(int i=0;i<4;i++)ends[i]=prefs.getInt("zoneEnd"+i,ends[i]);return ZoneRanges.valid(ends)?ends:ZoneRanges.defaults();
+    }
+    private void saveZones(int[] ends,int selectedZone){
+        android.content.SharedPreferences.Editor edit=getSharedPreferences("settings",0).edit().putBoolean("sharedZones",true).putInt("profile",selectedZone);
+        for(int i=0;i<4;i++)edit.putInt("zoneEnd"+i,ends[i]);
+        for(int i=0;i<5;i++)edit.putInt("low"+i,ZoneRanges.low(ends,i)).putInt("high"+i,ZoneRanges.high(ends,i));
+        edit.putInt("low",ZoneRanges.low(ends,selectedZone)).putInt("high",ZoneRanges.high(ends,selectedZone)).apply();
+    }
+    private void ensureZones(){
+        android.content.SharedPreferences prefs=getSharedPreferences("settings",0);
+        if(!prefs.getBoolean("sharedZones",false)){
+            int selectedZone=prefs.contains("profile")?Math.max(0,Math.min(4,prefs.getInt("profile",2))):2;
+            int low=prefs.getInt("low",120),high=prefs.getInt("high",150);
+            int[] ends=ZoneRanges.migrate(selectedZone,low,high);
+            if(ZoneRanges.low(ends,selectedZone)!=low||ZoneRanges.high(ends,selectedZone)!=high){
+                for(int i=0;i<5;i++){int[] candidate=ZoneRanges.migrate(i,low,high);if(ZoneRanges.low(candidate,i)==low&&ZoneRanges.high(candidate,i)==high){selectedZone=i;ends=candidate;break;}}
+            }
+            boolean existing=prefs.contains("profile");saveZones(ends,selectedZone);
+            if(existing)handler.post(()->new AlertDialog.Builder(this).setTitle("Your zones now join up").setMessage("Zones now use shared boundaries with no gaps or overlaps. Your previous BPM target was kept where possible; its zone number may have changed. Review all five ranges before your next run.").setPositiveButton("Review zones",(d,w)->zones()).setNegativeButton("Later",null).show());
+        }
+    }
     private void zones(){
-        LinearLayout box=column();box.setPadding(dp(24),dp(12),dp(24),dp(12));android.content.SharedPreferences prefs=getSharedPreferences("settings",0);
-        Spinner profile=new Spinner(this);profile.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"Zone 1","Zone 2","Zone 3","Zone 4","Zone 5"}));box.addView(profile);EditText low=new EditText(this),high=new EditText(this);low.setInputType(2);high.setInputType(2);low.setHint("Minimum bpm");high.setHint("Maximum bpm");box.addView(low);box.addView(high);
-        profile.setSelection(prefs.getInt("profile",0));profile.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onItemSelected(AdapterView<?> p,View v,int position,long id){low.setText(Integer.toString(prefs.getInt("low"+position,prefs.getInt("low",120))));high.setText(Integer.toString(prefs.getInt("high"+position,prefs.getInt("high",150))));}public void onNothingSelected(AdapterView<?> p){}});
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Your heart-rate zones").setMessage("Choose a profile and set its bpm range. Save to use this target for your run.").setView(box).setPositiveButton("Save & activate",null).setNegativeButton("Cancel",null).create();
-        dialog.setOnShowListener(d->dialog.getButton(-1).setOnClickListener(v->{try{int l=Integer.parseInt(low.getText().toString()),h=Integer.parseInt(high.getText().toString());if(l<30||h>240||l>=h)throw new IllegalArgumentException();int position=profile.getSelectedItemPosition();prefs.edit().putInt("profile",position).putInt("low"+position,l).putInt("high"+position,h).putInt("low",l).putInt("high",h).apply();dialog.dismiss();show("Settings");}catch(IllegalArgumentException e){high.setError("Use 30–240 bpm, minimum below maximum");}}));dialog.show();
+        if(RunService.current!=null&&RunService.current.running){new AlertDialog.Builder(this).setTitle("Target locked during your run").setMessage("Finish or discard this run before changing zones. Your current target stays active while paused.").setPositiveButton("OK",null).show();return;}
+        LinearLayout box=column();box.setPadding(dp(24),dp(12),dp(24),dp(12));
+        ScrollView scroll=new ScrollView(this);scroll.addView(box);
+        RadioGroup targets=new RadioGroup(this);TextView preview=text("",14,MUTED);
+        int selectedZone=getSharedPreferences("settings",0).getInt("profile",2);int[] ends=zoneEnds();
+        box.addView(text("Target for your next run",16,TEXT));
+        for(int i=0;i<5;i++){RadioButton button=new RadioButton(this);button.setId(View.generateViewId());button.setTextColor(TEXT);targets.addView(button);if(i==selectedZone)targets.check(button.getId());}
+        box.addView(targets);gap(box,12);box.addView(text("Zone boundaries · BPM",16,TEXT));
+        box.addView(text("Edit the top of Zones 1–4. The next zone starts one BPM higher, so every BPM from 30–240 belongs to exactly one zone.",13,MUTED));
+        EditText[] fields=new EditText[4];
+        for(int i=0;i<4;i++){gap(box,8);box.addView(text("Zone "+(i+1)+" ends at",13,TEXT));fields[i]=new EditText(this);fields[i].setTextColor(TEXT);fields[i].setInputType(2);fields[i].setSingleLine(true);fields[i].setText(Integer.toString(ends[i]));fields[i].setContentDescription("Zone "+(i+1)+" upper BPM boundary");box.addView(fields[i]);}
+        gap(box,12);box.addView(preview);
+        AlertDialog[] zoneDialog=new AlertDialog[1];
+        Runnable update=()->{
+            int[] draft=new int[4];try{for(int i=0;i<4;i++)draft[i]=Integer.parseInt(fields[i].getText().toString());if(!ZoneRanges.valid(draft))throw new IllegalArgumentException();
+                for(int i=0;i<5;i++){RadioButton button=(RadioButton)targets.getChildAt(i);boolean active=button.isChecked();button.setText("Zone "+(i+1)+" · "+ZoneRanges.low(draft,i)+"–"+ZoneRanges.high(draft,i)+" bpm"+(active?" · TARGET":""));}
+                if(zoneDialog[0]!=null&&zoneDialog[0].isShowing())zoneDialog[0].getButton(-1).setEnabled(true);
+                preview.setText("All five ranges meet with no gaps or overlaps.");preview.setTextColor(LIME);
+            }catch(IllegalArgumentException e){if(zoneDialog[0]!=null&&zoneDialog[0].isShowing())zoneDialog[0].getButton(-1).setEnabled(false);preview.setText("Enter four increasing boundaries from 30–239. Each zone needs at least one BPM. Save is unavailable until these are valid.");preview.setTextColor(0xffffbc8a);}
+        };
+        targets.setOnCheckedChangeListener((group,id)->update.run());
+        for(EditText field:fields)field.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int start,int count,int after){}public void onTextChanged(CharSequence s,int start,int before,int count){update.run();}public void afterTextChanged(android.text.Editable e){}});
+        update.run();
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Heart-rate zones").setView(scroll).setPositiveButton("Save & activate",null).setNegativeButton("Cancel",null).create();
+        zoneDialog[0]=dialog;
+        dialog.setOnShowListener(d->{update.run();dialog.getButton(-1).setOnClickListener(v->{
+            int[] draft=new int[4];try{for(int i=0;i<4;i++)draft[i]=Integer.parseInt(fields[i].getText().toString());if(!ZoneRanges.valid(draft))throw new IllegalArgumentException();
+                int active=0;for(int i=0;i<5;i++)if(((RadioButton)targets.getChildAt(i)).isChecked())active=i;
+                saveZones(draft,active);dialog.dismiss();show(screen);
+            }catch(IllegalArgumentException e){update.run();Toast.makeText(this,"Check the zone boundaries before saving",Toast.LENGTH_SHORT).show();}
+        });});dialog.show();
     }
     private class ZoneTrack extends View {
-        private int bpm=-1,low=120,high=150;private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
+        private int bpm=-1;private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
         ZoneTrack(){super(MainActivity.this);setContentDescription("Heart-rate target range");}
-        void update(int b,int l,int h){bpm=b;low=l;high=h;invalidate();}
-        @Override protected void onDraw(Canvas c){super.onDraw(c);float w=getWidth(),h=getHeight();paint.setColor(LINE);c.drawRoundRect(0,h*.25f,w,h*.75f,dp(3),dp(3),paint);paint.setColor(LIME);c.drawRoundRect(w/3,h*.25f,w*2/3,h*.75f,dp(3),dp(3),paint);if(bpm>0){float p=Math.max(0,Math.min(1,(bpm-low+(high-low))/(float)(3*(high-low))));paint.setColor(TEXT);c.drawCircle(Math.max(h/2,Math.min(w-h/2,w*p)),h/2,h/2,paint);}}
+        void update(int b,int l,int h){bpm=b;setContentDescription("Target "+l+" to "+h+" BPM"+(b>0?", current "+b+" BPM":""));invalidate();}
+        @Override protected void onDraw(Canvas c){
+            super.onDraw(c);float w=getWidth(),h=getHeight();int[] ends=zoneEnds();
+            int active=getSharedPreferences("settings",0).getInt("profile",2);
+            for(int i=0;i<5;i++){
+                float left=(ZoneRanges.low(ends,i)-ZoneRanges.MIN)/(float)(ZoneRanges.MAX-ZoneRanges.MIN+1)*w;
+                float right=(ZoneRanges.high(ends,i)-ZoneRanges.MIN+1)/(float)(ZoneRanges.MAX-ZoneRanges.MIN+1)*w;
+                paint.setColor(i==active?LIME:LINE);c.drawRoundRect(left,h*.25f,Math.max(left,right-dp(2)),h*.75f,dp(3),dp(3),paint);
+            }
+            if(bpm>0){float position=(bpm-ZoneRanges.MIN)/(float)(ZoneRanges.MAX-ZoneRanges.MIN);paint.setColor(TEXT);c.drawCircle(Math.max(h/2,Math.min(w-h/2,w*position)),h/2,h/2,paint);}
+        }
     }
 }
