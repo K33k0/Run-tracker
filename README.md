@@ -12,7 +12,7 @@ Set the effort you want to run at. RunZone tracks your route, reads your Bluetoo
 
 [**Download the latest APK**](https://github.com/K33k0/Run-tracker/releases/latest) · [All releases](https://github.com/K33k0/Run-tracker/releases) · [Report an issue](https://github.com/K33k0/Run-tracker/issues)
 
-> **Early release:** GPS tracking, live heart rate, zone alerts, run history and TCX exports are available. Direct account syncing is still awaiting provider setup. Further outdoor and screen-off testing is ongoing.
+> **Early release:** GPS tracking, live heart rate, zone alerts, run history and FIT exports are available. Direct account syncing is still awaiting provider setup. Further outdoor and screen-off testing is ongoing.
 
 ## What it does
 
@@ -24,7 +24,7 @@ Set the effort you want to run at. RunZone tracks your route, reads your Bluetoo
 | **Distance target** | Set an optional kilometre target from the Run screen or Settings. A one-time sound and three long vibrations mark reaching it; recording continues. |
 | **Optional auto-pause** | Choose a pace threshold. Recording pauses after sustained slower movement and resumes when you speed up. |
 | **Run history** | Open a saved run for its route, active/elapsed time, pace, heart-rate stats and chart. New recordings include kilometre splits. |
-| **TCX export** | Save or share a workout file for Smashrun, Runalyze, Strava or another compatible service. |
+| **FIT export** | Save or share a workout file for Smashrun, Runalyze, Strava or another compatible service. |
 
 ## Install
 
@@ -54,7 +54,7 @@ The release workflow never uninstalls or changes the app on your phone. See [rel
 3. **Allow location:** use the map's recenter button and grant location permission. Precise location is needed for run recording; Bluetooth connection asks for Nearby devices permission on newer Android versions.
 4. **Start running:** tap **Start run**. Pause/resume whenever you need to, then **Finish → Save run**, or choose **Discard run** and confirm to stop without saving.
 5. **Check screen-off readiness:** Settings shows background restrictions, battery optimisation, phone Battery Saver and notification status. Starting a run also prompts when these checks need attention, with an option to start anyway. Set RunZone battery usage to Unrestricted / Don’t optimise; manufacturer sleeping-app and auto-start restrictions still need a manual check.
-6. **Review it:** open **History**, select your run and scroll to **Sync & Export** to save or share a TCX file.
+6. **Review it:** open **History**, select your run and scroll to **Sync & Export** to save or share a FIT file.
 
 Keep media volume audible for the warning tones. Zone and location controls live in Settings, so the Run screen stays focused on your workout.
 
@@ -80,13 +80,13 @@ RunZone waits ten seconds below the speed threshold before pausing and three sec
 
 ## Smashrun, Runalyze and Strava
 
-| Service | TCX file export | Direct account sync |
+| Service | FIT file export | Direct account sync |
 | --- | --- | --- |
 | Smashrun | Available | Provider setup pending |
 | Runalyze | Available | Provider setup pending |
 | Strava | Available | Provider setup pending |
 
-TCX files preserve recorded timing, distance, GPS and heart rate when available. Missing sensor data is left out. Runs without GPS may not import into Smashrun.
+FIT files preserve recorded timing, distance, GPS, heart rate and beat-to-beat intervals when available. Beat intervals from compatible Bluetooth straps are included when you export or sync a run. Missing sensor data is left out. Runs without GPS may not import into Smashrun.
 
 Use the service's file importer: [Smashrun](https://smashrun.com/faq/basics), [Runalyze](https://runalyze.com/activity/new-upload) or [Strava](https://www.strava.com/upload/select).
 

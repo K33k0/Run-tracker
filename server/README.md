@@ -4,7 +4,7 @@ Smashrun now connects directly on Android and does not use this broker. Current 
 
 This is RunZone's OAuth service, shared by every installation of the app. Users sign in with their own Smashrun, Runalyze and Strava accounts. They never enter developer IDs, app secrets or personal API tokens into RunZone.
 
-**Current status:** deployed on the existing server at `https://runzone.wtechlab.uk`, behind the existing Cloudflare Tunnel. Local and public HTTPS health checks pass. Provider applications have not yet been registered, and authorization/uploads are not tested against live accounts. The app reads the service's readiness flags and shows connections as pending until credentials are configured. History, recording, auto-pause and TCX exports work independently.
+**Current status:** deployed on the existing server at `https://runzone.wtechlab.uk`, behind the existing Cloudflare Tunnel. Local and public HTTPS health checks pass. Provider applications have not yet been registered, and authorization/uploads are not tested against live accounts. The app reads the service's readiness flags and shows connections as pending until credentials are configured. History, recording, auto-pause and FIT exports work independently.
 
 ## Existing server deployment
 

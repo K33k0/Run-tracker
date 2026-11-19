@@ -4,7 +4,6 @@ import android.app.job.*;
 import android.content.*;
 import org.json.*;
 import java.io.*;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.function.BooleanSupplier;
 
@@ -48,8 +47,8 @@ final class CloudSync {
                 SyncHttp.Response response;
                 if("strava".equals(provider)&&item.has("uploadId"))response=SyncHttp.request("https://www.strava.com/api/v3/uploads/"+item.getString("uploadId"),"GET",Collections.singletonMap("Authorization","Bearer "+token),null);
                 else{
-                    RunRecord run=RunRecord.read(file);StringWriter xml=new StringWriter();TcxExporter.write(run,xml);byte[] bytes=xml.toString().getBytes(StandardCharsets.UTF_8);String filename="runzone-"+name.replace(".json","")+".tcx";
-                    if("smashrun".equals(provider)){Map<String,String> headers=new HashMap<>();headers.put("Authorization","Bearer "+token);headers.put("Content-Type","application/xml");response=SyncHttp.request("https://api.smashrun.com/v1/my/activities/","POST",headers,bytes);}
+                    RunRecord run=RunRecord.read(file);ByteArrayOutputStream fit=new ByteArrayOutputStream();FitExporter.write(run,fit);byte[] bytes=fit.toByteArray();String filename="runzone-"+name.replace(".json","")+".fit";
+                    if("smashrun".equals(provider))response=SyncHttp.upload("https://api.smashrun.com/v1/my/activities/",token,bytes,filename,false);
                     else response=SyncHttp.upload("strava".equals(provider)?"https://www.strava.com/api/v3/uploads":"https://runalyze.com/api/v1/activities/uploads",token,bytes,filename,"strava".equals(provider));
                 }
                 if(response.code==401){try{CloudAccounts.accessToken(c,provider,true);item.put("status","retry");retry=true;}catch(CloudAccounts.Reconnect e){item.put("status","auth");}}

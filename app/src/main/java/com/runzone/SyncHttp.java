@@ -16,10 +16,10 @@ final class SyncHttp {
         }finally{connection.disconnect();}
     }
     static Response json(String url,JSONObject input)throws IOException{return request(url,"POST",Collections.singletonMap("Content-Type","application/json"),input.toString().getBytes(StandardCharsets.UTF_8));}
-    static Response upload(String url,String token,byte[] tcx,String filename,boolean strava)throws IOException{
+    static Response upload(String url,String token,byte[] fit,String filename,boolean strava)throws IOException{
         String boundary="RunZone"+UUID.randomUUID().toString().replace("-","");ByteArrayOutputStream body=new ByteArrayOutputStream();
-        if(strava){field(body,boundary,"data_type","tcx");field(body,boundary,"sport_type","Run");field(body,boundary,"external_id",filename);}
-        body.write(("--"+boundary+"\r\nContent-Disposition: form-data; name=\"file\"; filename=\""+filename+"\"\r\nContent-Type: application/vnd.garmin.tcx+xml\r\n\r\n").getBytes(StandardCharsets.UTF_8));body.write(tcx);body.write(("\r\n--"+boundary+"--\r\n").getBytes(StandardCharsets.UTF_8));
+        if(strava){field(body,boundary,"data_type","fit");field(body,boundary,"sport_type","Run");field(body,boundary,"external_id",filename);}
+        body.write(("--"+boundary+"\r\nContent-Disposition: form-data; name=\"file\"; filename=\""+filename+"\"\r\nContent-Type: "+FitExporter.MIME_TYPE+"\r\n\r\n").getBytes(StandardCharsets.UTF_8));body.write(fit);body.write(("\r\n--"+boundary+"--\r\n").getBytes(StandardCharsets.UTF_8));
         Map<String,String> headers=new HashMap<>();headers.put("Content-Type","multipart/form-data; boundary="+boundary);headers.put("Authorization","Bearer "+token);return request(url,"POST",headers,body.toByteArray());
     }
     private static void field(OutputStream out,String boundary,String name,String value)throws IOException{out.write(("--"+boundary+"\r\nContent-Disposition: form-data; name=\""+name+"\"\r\n\r\n"+value+"\r\n").getBytes(StandardCharsets.UTF_8));}

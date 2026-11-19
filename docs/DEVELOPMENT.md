@@ -23,7 +23,7 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`. For sig
 | `app/src/main/java/com/runzone/ZoneCoach.java` | Zone-alert timing and suppression during preview/pause |
 | `app/src/main/java/com/runzone/AutoPause.java` | Pace threshold, pause/resume delay and hysteresis |
 | `app/src/main/java/com/runzone/RunRecord.java` | Saved-run compatibility, heart-rate stats and splits |
-| `app/src/main/java/com/runzone/TcxExporter.java` | TCX v2 serialization |
+| `app/src/main/java/com/runzone/FitExporter.java` | FIT activity serialization |
 | `app/src/main/java/com/runzone/CloudSync.java` | Durable, account-bound background upload queue |
 | `server/` | Shared OAuth broker and deployment/registration documentation |
 | `scripts/` | Release versioning and APK verification |
@@ -42,7 +42,7 @@ Auto-pause is optional. The pace range is 3:00–30:00 min/km (default 12:00). R
 
 Run files are private JSON under the app's `files/runs` directory. Version-2 records include actual start/end times, cumulative distance and active time per route point, independent heart-rate samples, starting zone limits and track identifiers for pauses. Earlier recordings remain readable/exportable; their start time is estimated and kilometre splits are unavailable. Heart-rate averages use valid recorded samples.
 
-TCX exports contain timestamps, measured distance, available GPS/altitude/heart rate and separate pause tracks. Missing measurements are omitted. TCX requires a Calories field; RunZone writes zero because it does not estimate calories. The Android document picker saves user-chosen files. Sharing uses a read-only, per-URI-grant content provider rather than exposing private storage.
+FIT exports contain timestamps, measured distance, available GPS, altitude and heart rate, kilometre laps where split data is available, and timer events. New recordings save pause and resume times directly. Earlier recordings estimate them from segment boundaries. FIT speed uses measured GPS speed when available, or distance over time within the same unpaused segment. Lap and session average speeds use active time. The session also reports estimated GPS moving time from intervals of up to ten seconds at 0.5 m/s or faster, and elevation gain and loss using a five-metre noise band. Cadence comes from the optional Android step detector and requires Physical activity permission on Android 10 and later. Missing measurements are omitted. The Android document picker saves user-chosen files. Sharing uses a read-only, per-URI-grant content provider rather than exposing private storage.
 
 ## Maps and network access
 
@@ -54,9 +54,9 @@ For the other providers, `oauthBaseUrl` in `gradle.properties` points to the acc
 
 ## Validation and remaining checks
 
-Unit tests cover heart-rate decoding, alert boundaries/timing, stale measurements, preview suppression, map projection, auto-pause, slow-pace distance accumulation, legacy recordings, splits and TCX output. Broker tests use mock providers to check state/proof binding, independent users, expiry, scope rejection and token refresh. Release-tool tests reject invalid versions, debug APKs and unexpected signing certificates.
+Unit tests cover heart-rate decoding, alert boundaries/timing, stale measurements, preview suppression, map projection, auto-pause, slow-pace distance accumulation, legacy recordings, splits and FIT output. Broker tests use mock providers to check state/proof binding, independent users, expiry, scope rejection and token refresh. Release-tool tests reject invalid versions, debug APKs and unexpected signing certificates.
 
-TCX output from a test fixture and an actual older recording has been validated separately against Garmin's official TrainingCenterDatabase v2 schema. A physical Android phone has been used to verify installation, live BPM without a run, map/current-location rendering, saved-run details and export generation.
+A physical Android phone has been used to verify installation, live BPM without a run, map/current-location rendering and saved-run details.
 
 Outdoor distance accuracy, automatic pause/resume and screen-off runs still need further physical validation. Live third-party authorization/uploads remain unverified while provider registrations are pending. Interrupted recordings are not recovered after process termination or force-stop.
 

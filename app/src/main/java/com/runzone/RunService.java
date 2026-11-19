@@ -1,9 +1,12 @@
 package com.runzone;
 
 import android.app.*;
+import android.Manifest;
 import android.bluetooth.*;
 import android.content.*;
+import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
+import android.hardware.*;
 import android.location.*;
 import android.media.*;
 import android.os.*;
@@ -50,6 +53,29 @@ public class RunService extends Service implements LocationListener {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private JSONArray points = new JSONArray();
     private JSONArray heartSamples = new JSONArray();
+    private JSONArray timerOffsets = new JSONArray();
+    private JSONArray cadenceSamples = new JSONArray();
+    private SensorManager motionSensors;
+    private final ArrayDeque<Long> recentSteps = new ArrayDeque<>();
+    private long lastCadenceAt;
+    private final SensorEventListener stepListener = new SensorEventListener() {
+        @Override public void onSensorChanged(SensorEvent event) {
+            long at = event.timestamp / 1_000_000;
+            if (!running || paused || at < segmentStarted) return;
+            if (!recentSteps.isEmpty() && at <= recentSteps.getLast()) return;
+            while (!recentSteps.isEmpty() && at - recentSteps.getFirst() > 3000) recentSteps.removeFirst();
+            recentSteps.addLast(at);
+            if (recentSteps.size() < 3 || at - lastCadenceAt < 1000) return;
+            int spm = (int) Math.round(60000.0 * (recentSteps.size() - 1) / (at - recentSteps.getFirst()));
+            if (spm <= 0 || spm >= 510) return;
+            try {
+                cadenceSamples.put(new JSONObject().put("time", startedAt + at - started)
+                        .put("track", trackIndex).put("spm", spm));
+                lastCadenceAt = at;
+            } catch (JSONException ignored) {}
+        }
+        @Override public void onAccuracyChanged(Sensor sensor, int accuracy) {}
+    };
     public final DistanceGoal distanceGoal=new DistanceGoal();
     private long goalFeedbackUntil;
     private final ZoneCoach coach=new ZoneCoach();
@@ -104,8 +130,18 @@ public class RunService extends Service implements LocationListener {
             startedAt=System.currentTimeMillis();trackIndex=0;
             autoPaused=false;autoPause.reset();recentSpeed=Double.NaN;speedAnchor=null;segmentStarted=started;
             zoneLow=getSharedPreferences("settings",0).getInt("low",120);zoneHigh=getSharedPreferences("settings",0).getInt("high",150);
-            coach.reset(); distanceTracker.reset(); route.clear(); points=new JSONArray();heartSamples=new JSONArray();
+            coach.reset(); distanceTracker.reset(); route.clear(); points=new JSONArray();heartSamples=new JSONArray();timerOffsets=new JSONArray();
             promote(gatt!=null || intent.hasExtra("device"));
+            cadenceSamples=new JSONArray();recentSteps.clear();lastCadenceAt=0;
+            motionSensors=getSystemService(SensorManager.class);
+            if(motionSensors!=null&&(Build.VERSION.SDK_INT<29
+                    ||checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION)==PackageManager.PERMISSION_GRANTED)){
+                Sensor stepDetector=motionSensors.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR);
+                if(stepDetector!=null){
+                    try{motionSensors.registerListener(stepListener,stepDetector,SensorManager.SENSOR_DELAY_NORMAL,handler);}
+                    catch(SecurityException ignored){}
+                }
+            }
             try { locations.requestLocationUpdates(LocationManager.GPS_PROVIDER,1000,0,this); }
             catch(SecurityException | IllegalArgumentException e) { gps="GPS unavailable • check Settings"; }
         }
@@ -115,6 +151,7 @@ public class RunService extends Service implements LocationListener {
     public long elapsed() { return !running?0:(paused ? pausedAt : SystemClock.elapsedRealtime()) - started - pausedTotal; }
     public void finishRun() {
         goalFeedbackUntil=0;RunHaptics.cancel(this);
+        if(motionSensors!=null)motionSensors.unregisterListener(stepListener);
         running=false; paused=false; autoPaused=false;autoPause.reset();coach.reset(); distanceTracker.reset();
         zoneBeep.reset();if(tone!=null)tone.stopTone();
         if(runWakeLock!=null&&runWakeLock.isHeld())runWakeLock.release();
@@ -123,7 +160,7 @@ public class RunService extends Service implements LocationListener {
     }
     public void discardRun() {
         finishRun();
-        route.clear();points=new JSONArray();heartSamples=new JSONArray();meters=0;pausedTotal=0;
+        route.clear();points=new JSONArray();heartSamples=new JSONArray();timerOffsets=new JSONArray();cadenceSamples=new JSONArray();meters=0;pausedTotal=0;
     }
     public void disconnectSensor() {
         sensorAddress=null;handler.removeCallbacks(reconnectSensor);closeSensor();
@@ -135,10 +172,13 @@ public class RunService extends Service implements LocationListener {
         setPaused(!paused,false);
     }
     private void setPaused(boolean value,boolean automatic) {
-        if(paused==value)return;
-        if (paused) {pausedTotal += SystemClock.elapsedRealtime()-pausedAt;trackIndex++;} else pausedAt=SystemClock.elapsedRealtime();
+        if(!running||paused==value)return;
+        long now=SystemClock.elapsedRealtime();
+        timerOffsets.put(now-started);
+        recentSteps.clear();lastCadenceAt=0;
+        if (paused) {pausedTotal += now-pausedAt;trackIndex++;} else pausedAt=now;
         goalFeedbackUntil=0;RunHaptics.cancel(this);
-        paused=value;autoPaused=value&&automatic;segmentStarted=SystemClock.elapsedRealtime();distanceTracker.reset();coach.reset();autoPause.reset();route.add(null);
+        paused=value;autoPaused=value&&automatic;segmentStarted=now;distanceTracker.reset();coach.reset();autoPause.reset();route.add(null);
         zoneBeep.reset();if(tone!=null)tone.stopTone();
     }
     @Override public void onLocationChanged(Location location) {
@@ -146,7 +186,9 @@ public class RunService extends Service implements LocationListener {
         long fixAge=SystemClock.elapsedRealtimeNanos()-location.getElapsedRealtimeNanos();
         if (!location.hasAccuracy() || location.getAccuracy()>30 || fixAge<0 || fixAge>5_000_000_000L) { gps="Weak GPS signal"; distanceTracker.reset();recentSpeed=Double.NaN;speedAnchor=null; return; }
         gps="GPS connected • ±"+(int)location.getAccuracy()+" m";
-        if(location.getAccuracy()<=15&&location.hasSpeed()&&(!location.hasSpeedAccuracy()||location.getSpeedAccuracyMetersPerSecond()<=.8f)){
+        boolean hasMeasuredSpeed=location.getAccuracy()<=15&&location.hasSpeed()&&RunRecord.validSpeed(location.getSpeed())
+                &&(!location.hasSpeedAccuracy()||location.getSpeedAccuracyMetersPerSecond()<=.8f);
+        if(hasMeasuredSpeed){
             recentSpeed=location.getSpeed();speedAt=location.getElapsedRealtimeNanos()/1000000;
         }else if(location.getAccuracy()<=15){
             // Some phones omit speed after stopping. Keep a separate anchor while paused.
@@ -177,7 +219,9 @@ public class RunService extends Service implements LocationListener {
         try {
             JSONObject point=new JSONObject().put("lat",location.getLatitude()).put("lon",location.getLongitude()).put("time",location.getTime()).put("bpm",freshBpm()).put("segment",route.size()>1&&route.get(route.size()-2)==null)
                 .put("track",trackIndex).put("activeMs",elapsed()).put("distanceMeters",meters);
-            if(location.hasAltitude())point.put("altitude",location.getAltitude());points.put(point);
+            if(location.hasAltitude())point.put("altitude",location.getAltitude());
+            if(hasMeasuredSpeed)point.put("speedMps",(double) location.getSpeed());
+            points.put(point);
         } catch(JSONException ignored) {}
     }
     @Override public void onProviderDisabled(String provider) { gps="GPS turned off"; distanceTracker.reset(); }
@@ -186,7 +230,14 @@ public class RunService extends Service implements LocationListener {
     private void receive(BluetoothGatt connection,byte[] bytes) { handler.post(()-> {
         if(current!=this||connection!=gatt) return;
         bpm=HeartRate.decode(bytes); lastHr=SystemClock.elapsedRealtime();
-        if(running&&!paused&&RunRecord.validBpm(bpm))try{heartSamples.put(new JSONObject().put("time",System.currentTimeMillis()).put("activeMs",elapsed()).put("bpm",bpm).put("track",trackIndex));}catch(JSONException ignored){}
+        if(running&&!paused&&RunRecord.validBpm(bpm))try{
+            JSONObject pulse=new JSONObject().put("time",System.currentTimeMillis())
+                    .put("activeMs",elapsed()).put("bpm",bpm).put("track",trackIndex);
+            JSONArray intervals=new JSONArray();
+            for(int ticks:HeartRate.rrIntervals(bytes))if(ticks>0)intervals.put(ticks);
+            if(intervals.length()>0)pulse.put("rrTicks",intervals);
+            heartSamples.put(pulse);
+        }catch(JSONException ignored){}
         android.content.SharedPreferences prefs=getSharedPreferences("settings",0);
         updateZoneBeeps();
         int zone=coach.accept(ZoneCoach.enabled(running,paused,autoPaused),bpm,prefs.getInt("low",120),prefs.getInt("high",150),lastHr);
@@ -253,8 +304,10 @@ public class RunService extends Service implements LocationListener {
     public boolean save() {
         try {
             java.io.File dir=new java.io.File(getFilesDir(),"runs"); if(!dir.exists() && !dir.mkdirs()) return false;
-            JSONObject run=new JSONObject().put("schemaVersion",2).put("date",startedAt).put("startTime",startedAt).put("endTime",System.currentTimeMillis())
-                .put("meters",meters).put("duration",elapsed()).put("route",points).put("heartRate",heartSamples).put("zoneLow",zoneLow).put("zoneHigh",zoneHigh).put("distanceTargetMeters",distanceGoal.targetMeters()).put("distanceTargetReached",distanceGoal.reached());
+            long now=SystemClock.elapsedRealtime();
+            long active=(paused?pausedAt:now)-started-pausedTotal;
+            JSONObject run=new JSONObject().put("schemaVersion",2).put("date",startedAt).put("startTime",startedAt).put("endTime",startedAt+now-started)
+                .put("meters",meters).put("duration",active).put("route",points).put("heartRate",heartSamples).put("timerOffsets",timerOffsets).put("cadence",cadenceSamples).put("zoneLow",zoneLow).put("zoneHigh",zoneHigh).put("distanceTargetMeters",distanceGoal.targetMeters()).put("distanceTargetReached",distanceGoal.reached());
             java.io.File file=new java.io.File(dir,System.currentTimeMillis()+".json");
             try(java.io.OutputStreamWriter writer=new java.io.OutputStreamWriter(new java.io.FileOutputStream(file),java.nio.charset.StandardCharsets.UTF_8)) { writer.write(run.toString()); }
             CloudSync.enqueueNew(this,file);
@@ -263,6 +316,7 @@ public class RunService extends Service implements LocationListener {
     }
     @Override public void onDestroy() {
         RunHaptics.cancel(this);
+        if(motionSensors!=null)motionSensors.unregisterListener(stepListener);
         sensorAddress=null;
         if(runWakeLock!=null&&runWakeLock.isHeld())runWakeLock.release();
         if(locations!=null) locations.removeUpdates(this);
