@@ -142,11 +142,17 @@ public class RunService extends Service implements LocationListener {
         try { tone = new ToneGenerator(AudioManager.STREAM_MUSIC,85); } catch (RuntimeException ignored) {}
         handler.post(paceCheck);
     }
+    private PendingIntent control(String action,int code){return PendingIntent.getService(this,code,new Intent(this,RunService.class).setAction(action),PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);}
     private void promote(boolean bluetooth) {
         PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_IMMUTABLE);
-        notification=new Notification.Builder(this,"run").setContentTitle(running?"RunZone • Run in progress":"RunZone • Live heart rate")
+        Notification.Builder builder=new Notification.Builder(this,"run").setContentTitle(running&&paused?"RunZone • Paused":running?"RunZone • Run in progress":"RunZone • Live heart rate")
             .setContentText(running?"Recording your route and coaching your heart rate":"Sensor connected • no run is being recorded")
-            .setSmallIcon(android.R.drawable.ic_menu_mylocation).setContentIntent(open).setOngoing(true).build();
+            .setSmallIcon(android.R.drawable.ic_menu_mylocation).setContentIntent(open).setOngoing(true).setVisibility(Notification.VISIBILITY_PUBLIC);
+        if(running){
+            builder.addAction(new Notification.Action.Builder(null,paused?"Resume":"Pause",control("TOGGLE_PAUSE",1)).build());
+            builder.addAction(new Notification.Action.Builder(null,"Finish & save",control("FINISH",2)).build());
+        }
+        notification=builder.build();
         if(Build.VERSION.SDK_INT>=29) {
             int types=running?ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION:0;
             if(bluetooth) types|=ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE;
@@ -155,6 +161,14 @@ public class RunService extends Service implements LocationListener {
     }
     @Override public int onStartCommand(Intent intent,int flags,int id) {
         if(intent==null) { stopSelf(); return START_NOT_STICKY; }
+        if("TOGGLE_PAUSE".equals(intent.getAction())){if(running)togglePause();return START_NOT_STICKY;}
+        if("FINISH".equals(intent.getAction())){
+            if(running){
+                if(save()){finishRun();android.widget.Toast.makeText(this,"Run saved. Nice work.",android.widget.Toast.LENGTH_SHORT).show();}
+                else android.widget.Toast.makeText(this,"Couldn't save. Your run is still active.",android.widget.Toast.LENGTH_LONG).show();
+            }
+            return START_NOT_STICKY;
+        }
         if("START".equals(intent.getAction()) && !running) {
             distanceGoal.reset(getSharedPreferences("settings",0).getInt("distanceTargetMeters",0));goalFeedbackUntil=0;
             running=true; paused=false; started=SystemClock.elapsedRealtime(); pausedTotal=0; meters=0;
@@ -215,6 +229,7 @@ public class RunService extends Service implements LocationListener {
         paused=value;autoPaused=value&&automatic;segmentStarted=now;distanceTracker.reset();coach.reset();autoPause.reset();route.add(null);
         zoneBeep.reset();if(tone!=null)tone.stopTone();bpmToneActive=false;
         ensureBeepLoop();
+        promote(gatt!=null);
     }
     @Override public void onLocationChanged(Location location) {
         if (!running) return;
