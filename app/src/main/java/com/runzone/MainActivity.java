@@ -214,6 +214,13 @@ public class MainActivity extends Activity implements LocationListener {
         smallTitle(content,"SYNC & EXPORT");gap(content,12);LinearLayout sync=card();syncLabels.clear();
         for(String provider:CloudAccounts.PROVIDERS){LinearLayout r=row(),labels=column();labels.addView(bold(CloudAccounts.name(provider),16,TEXT));gap(labels,5);TextView state=text(CloudSync.status(this,detailFile.getName(),provider),12,MUTED);syncLabels.put(provider,state);labels.addView(state);weighted(r,labels);r.addView(pill("›",0xff2a3835,LIME,v->accountOptions(provider)));sync.addView(r);gap(sync,14);}
         sync.addView(pill("Export FIT file  ↗",LIME,BG,v->prepareExport()));gap(sync,12);sync.addView(text("Compatible with Smashrun, Runalyze and Strava. Save a file or share it with another app.",12,MUTED));content.addView(sync);
+        gap(content,16);TextView delete=bold("Delete run",15,0xffff8a80);delete.setPadding(dp(8),dp(12),dp(8),dp(12));delete.setOnClickListener(v->confirmDelete());content.addView(delete);
+    }
+    private void confirmDelete(){
+        java.io.File file=detailFile;if(file==null)return;
+        new AlertDialog.Builder(this).setTitle("Delete this run?").setMessage("It will be removed from this phone and won't sync. Copies already uploaded to Smashrun, Strava or Runalyze stay there. This can't be undone.")
+            .setPositiveButton("Delete",(d,w)->{CloudSync.forget(this,file.getName());if(file.delete()||!file.exists()){detailFile=null;detailRun=null;Toast.makeText(this,"Run deleted",Toast.LENGTH_SHORT).show();show("History");}else Toast.makeText(this,"Couldn't delete the run",Toast.LENGTH_LONG).show();})
+            .setNegativeButton("Cancel",null).show();
     }
     private void autoPausePace(){
         EditText input=new EditText(this);input.setSingleLine(true);input.setHint("Minutes:seconds per km");input.setText(paceLabel(getSharedPreferences("settings",0).getInt("pausePace",720)));
