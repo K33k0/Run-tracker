@@ -34,8 +34,35 @@ public class RunService extends Service implements LocationListener {
             int change=autoPause.accept(prefs.getBoolean("autoPause",false),paused&&!autoPaused,autoPaused,prefs.getInt("pausePace",720),speed,SystemClock.elapsedRealtime());
             if(change<0)setPaused(true,true);else if(change>0)setPaused(false,false);
         }
+        if(running&&now-draftSavedAt>=DRAFT_INTERVAL_MS){draftSavedAt=now;saveDraft();}
         handler.postDelayed(this,1000);
     }};
+    static final long DRAFT_INTERVAL_MS=30000;
+    private long draftSavedAt;
+    private final java.util.concurrent.ExecutorService draftWriter=java.util.concurrent.Executors.newSingleThreadExecutor();
+    static java.io.File draftFile(Context c){return new java.io.File(c.getFilesDir(),"run-draft.json");}
+    private void saveDraft(){
+        final String json;
+        try{json=snapshot().put("recovered",true).toString();}catch(JSONException e){return;}
+        final java.io.File target=draftFile(this);
+        draftWriter.execute(()->{try{writeAtomically(target,json);}catch(java.io.IOException e){android.util.Log.w("RunZone","Could not write run draft",e);}});
+    }
+    private void deleteDraft(){final java.io.File target=draftFile(this);draftWriter.execute(()->{if(target.exists()&&!target.delete())android.util.Log.w("RunZone","Could not delete run draft");});}
+    static void writeAtomically(java.io.File file,String text)throws java.io.IOException{
+        java.io.File temp=new java.io.File(file.getPath()+".tmp");
+        try(java.io.FileOutputStream out=new java.io.FileOutputStream(temp)){out.write(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));out.getFD().sync();}
+        if(!temp.renameTo(file)){temp.delete();throw new java.io.IOException("rename failed: "+file);}
+    }
+    /** Moves a run left behind by a killed recording into the run list. Returns the saved file, or null. */
+    static java.io.File recoverDraft(Context c){
+        java.io.File draft=draftFile(c);if(!draft.exists())return null;
+        java.io.File dir=new java.io.File(c.getFilesDir(),"runs");if(!dir.exists()&&!dir.mkdirs())return null;
+        java.io.File file=new java.io.File(dir,draft.lastModified()+".json");
+        if(!draft.renameTo(file))return null;
+        CloudSync.enqueueNew(c,file);
+        return file;
+    }
+    static void discardDraft(Context c){java.io.File draft=draftFile(c);if(draft.exists()&&!draft.delete())android.util.Log.w("RunZone","Could not delete run draft");}
     public Location lastFix;
     public final ArrayList<Location> route = new ArrayList<>();
     public volatile String sensor = "No heart-rate sensor", gps = "Waiting for GPS";
@@ -81,8 +108,16 @@ public class RunService extends Service implements LocationListener {
     private final ZoneCoach coach=new ZoneCoach();
     private final ZoneBeep zoneBeep=new ZoneBeep();
     private boolean bpmToneActive;
-    private final Runnable beepCheck=new Runnable(){public void run(){updateZoneBeeps();handler.postDelayed(this,20);}};
+    // Beeps are paced at the heart rate, so this needs fine resolution, but only while beeps can actually play.
+    private boolean beepLoop;
+    private final Runnable beepCheck=new Runnable(){public void run(){
+        updateZoneBeeps();
+        if(beepsWanted())handler.postDelayed(this,20);else beepLoop=false;
+    }};
+    private boolean beepsWanted(){return getSharedPreferences("settings",0).getBoolean("zoneBeeps",false)&&ZoneCoach.enabled(running,paused,autoPaused);}
+    private void ensureBeepLoop(){if(!beepLoop&&beepsWanted()){beepLoop=true;handler.post(beepCheck);}}
     public void updateZoneBeeps(){
+        ensureBeepLoop();
         if(SystemClock.elapsedRealtime()<goalFeedbackUntil)return;
         android.content.SharedPreferences prefs=getSharedPreferences("settings",0);
         int fresh=freshBpm();
@@ -106,7 +141,6 @@ public class RunService extends Service implements LocationListener {
         locations = getSystemService(LocationManager.class);
         try { tone = new ToneGenerator(AudioManager.STREAM_MUSIC,85); } catch (RuntimeException ignored) {}
         handler.post(paceCheck);
-        handler.post(beepCheck);
     }
     private void promote(boolean bluetooth) {
         PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_IMMUTABLE);
@@ -127,7 +161,7 @@ public class RunService extends Service implements LocationListener {
             runWakeLock=getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"RunZone:recording");
             runWakeLock.setReferenceCounted(false);
             runWakeLock.acquire(120000);wakeRenewedAt=started;
-            startedAt=System.currentTimeMillis();trackIndex=0;
+            startedAt=System.currentTimeMillis();trackIndex=0;draftSavedAt=started;beepLoop=false;handler.removeCallbacks(beepCheck);
             autoPaused=false;autoPause.reset();recentSpeed=Double.NaN;speedAnchor=null;segmentStarted=started;
             zoneLow=getSharedPreferences("settings",0).getInt("low",120);zoneHigh=getSharedPreferences("settings",0).getInt("high",150);
             coach.reset(); distanceTracker.reset(); route.clear(); points=new JSONArray();heartSamples=new JSONArray();timerOffsets=new JSONArray();
@@ -159,7 +193,7 @@ public class RunService extends Service implements LocationListener {
         if(sensorAddress!=null) promote(true); else stopSelf();
     }
     public void discardRun() {
-        finishRun();
+        finishRun();deleteDraft();
         route.clear();points=new JSONArray();heartSamples=new JSONArray();timerOffsets=new JSONArray();cadenceSamples=new JSONArray();meters=0;pausedTotal=0;
     }
     public void disconnectSensor() {
@@ -179,7 +213,8 @@ public class RunService extends Service implements LocationListener {
         if (paused) {pausedTotal += now-pausedAt;trackIndex++;} else pausedAt=now;
         goalFeedbackUntil=0;RunHaptics.cancel(this);
         paused=value;autoPaused=value&&automatic;segmentStarted=now;distanceTracker.reset();coach.reset();autoPause.reset();route.add(null);
-        zoneBeep.reset();if(tone!=null)tone.stopTone();
+        zoneBeep.reset();if(tone!=null)tone.stopTone();bpmToneActive=false;
+        ensureBeepLoop();
     }
     @Override public void onLocationChanged(Location location) {
         if (!running) return;
@@ -301,18 +336,21 @@ public class RunService extends Service implements LocationListener {
             },BluetoothDevice.TRANSPORT_LE);
         } catch(SecurityException | IllegalArgumentException e) { sensor="Bluetooth permission unavailable"; }
     }
+    private JSONObject snapshot() throws JSONException {
+        long now=SystemClock.elapsedRealtime();
+        long active=(paused?pausedAt:now)-started-pausedTotal;
+        return new JSONObject().put("schemaVersion",2).put("date",startedAt).put("startTime",startedAt).put("endTime",startedAt+now-started)
+            .put("meters",meters).put("duration",active).put("route",points).put("heartRate",heartSamples).put("timerOffsets",timerOffsets).put("cadence",cadenceSamples).put("zoneLow",zoneLow).put("zoneHigh",zoneHigh).put("distanceTargetMeters",distanceGoal.targetMeters()).put("distanceTargetReached",distanceGoal.reached());
+    }
     public boolean save() {
         try {
             java.io.File dir=new java.io.File(getFilesDir(),"runs"); if(!dir.exists() && !dir.mkdirs()) return false;
-            long now=SystemClock.elapsedRealtime();
-            long active=(paused?pausedAt:now)-started-pausedTotal;
-            JSONObject run=new JSONObject().put("schemaVersion",2).put("date",startedAt).put("startTime",startedAt).put("endTime",startedAt+now-started)
-                .put("meters",meters).put("duration",active).put("route",points).put("heartRate",heartSamples).put("timerOffsets",timerOffsets).put("cadence",cadenceSamples).put("zoneLow",zoneLow).put("zoneHigh",zoneHigh).put("distanceTargetMeters",distanceGoal.targetMeters()).put("distanceTargetReached",distanceGoal.reached());
             java.io.File file=new java.io.File(dir,System.currentTimeMillis()+".json");
-            try(java.io.OutputStreamWriter writer=new java.io.OutputStreamWriter(new java.io.FileOutputStream(file),java.nio.charset.StandardCharsets.UTF_8)) { writer.write(run.toString()); }
+            writeAtomically(file,snapshot().toString());
+            deleteDraft();
             CloudSync.enqueueNew(this,file);
             return true;
-        } catch(Exception e) { return false; }
+        } catch(Exception e) { android.util.Log.e("RunZone","Could not save run",e); return false; }
     }
     @Override public void onDestroy() {
         RunHaptics.cancel(this);
@@ -321,6 +359,7 @@ public class RunService extends Service implements LocationListener {
         if(runWakeLock!=null&&runWakeLock.isHeld())runWakeLock.release();
         if(locations!=null) locations.removeUpdates(this);
         if(gatt!=null) { try { gatt.disconnect(); gatt.close(); } catch(SecurityException ignored) {} }
+        if(running)saveDraft();draftWriter.shutdown();
         handler.removeCallbacksAndMessages(null); if(tone!=null) tone.release(); current=null; super.onDestroy();
     }
     @Override public IBinder onBind(Intent intent) { return null; }
