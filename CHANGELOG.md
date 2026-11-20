@@ -1,5 +1,11 @@
 # RunZone changelog
 
+## v1.2.6
+
+- Automatically save the run in progress every 30 seconds. If RunZone is closed unexpectedly, the next launch offers to keep or discard the unfinished run.
+- Save battery by checking for zone beeps only while a run is recording with zone beeps turned on.
+- Show the same default heart-rate zone in Settings and on the run screen.
+
 ## v1.2.5
 
 - Save, share, and sync runs as FIT files for Smashrun, Strava, and Runalyze.
