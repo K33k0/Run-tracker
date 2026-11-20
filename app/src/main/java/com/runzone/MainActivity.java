@@ -48,6 +48,7 @@ public class MainActivity extends Activity implements LocationListener {
         if(state!=null&&state.getString("export")!=null)pendingExport=new java.io.File(new java.io.File(getCacheDir(),"exports"),state.getString("export"));
         if(state!=null&&state.getString("detail")!=null)openRun(new java.io.File(new java.io.File(getFilesDir(),"runs"),state.getString("detail")));else show("Run");
         if(RunService.current==null&&selected!=null&&bluetoothAllowed())monitor(selected);
+        if((RunService.current==null||!RunService.current.running)&&RunService.draftFile(this).exists())offerRecovery();
         handleAccountCallback(getIntent());
         AppUpdates.schedule(this);
         AppUpdates.check(this,getIntent().getBooleanExtra("checkUpdate",false));
@@ -149,13 +150,18 @@ public class MainActivity extends Activity implements LocationListener {
         if(!permissions(true,selected!=null,this::begin))return;Intent intent=new Intent(this,RunService.class).setAction("START");
         if(RunService.current==null&&selected!=null)intent.putExtra("device",selected);startForegroundService(intent);handler.postDelayed(this::render,200);
     }
+    private void offerRecovery(){
+        new AlertDialog.Builder(this).setTitle("Recover unfinished run?").setMessage("RunZone stopped while a run was recording. You can keep it up to the last automatic save (at most 30 seconds before it stopped).").setCancelable(false)
+            .setPositiveButton("Keep run",(d,w)->{if(RunService.recoverDraft(this)!=null){Toast.makeText(this,"Run recovered",Toast.LENGTH_SHORT).show();show("History");}else Toast.makeText(this,"Couldn't recover the run",Toast.LENGTH_LONG).show();})
+            .setNegativeButton("Discard",(d,w)->new AlertDialog.Builder(this).setTitle("Discard this run?").setMessage("This run cannot be recovered afterwards.").setPositiveButton("Discard run",(c,x)->RunService.discardDraft(this)).setNegativeButton("Keep run",(c,x)->offerRecovery()).show()).show();
+    }
     private void finishSession(){RunService s=RunService.current;if(s==null||!s.running)return;
         new AlertDialog.Builder(this).setTitle("Save your run?").setMessage("Your route, distance and active time will be saved. Your heart-rate sensor stays connected.").setPositiveButton("Save run",(d,w)->{if(s.save()){s.finishRun();Toast.makeText(this,"Run saved. Nice work.",Toast.LENGTH_SHORT).show();render();}else Toast.makeText(this,"Couldn't save. Your run is still active; try again.",Toast.LENGTH_LONG).show();}).setNeutralButton("Discard run",(d,w)->new AlertDialog.Builder(this).setTitle("Discard this run?").setMessage("Stop recording without saving? This run cannot be recovered.").setPositiveButton("Discard run",(confirm,which)->{if(s.running){s.discardRun();render();Toast.makeText(this,"Run discarded",Toast.LENGTH_SHORT).show();}}).setNegativeButton("Keep run",null).show()).setNegativeButton("Keep running",null).show();
     }
     private void settings(){
         heading("Settings","Make RunZone work for the way you train.");smallTitle(content,"TRAINING");gap(content,12);
         LinearLayout training=card();int low=getSharedPreferences("settings",0).getInt("low",120),high=getSharedPreferences("settings",0).getInt("high",150);
-        settingRow(training,"Heart-rate zones","Zone "+(getSharedPreferences("settings",0).getInt("profile",0)+1)+" · "+low+"–"+high+" bpm",v->zones());
+        settingRow(training,"Heart-rate zones","Zone "+(getSharedPreferences("settings",0).getInt("profile",2)+1)+" · "+low+"–"+high+" bpm",v->zones());
         gap(training,18);settingRow(training,"Distance target",distanceTargetLabel(),v->distanceTarget());
         gap(training,18);settingRow(training,"Test strong vibrations","Three long pulses at maximum supported strength",v->testHaptics());
         gap(training,18);android.content.SharedPreferences preferences=getSharedPreferences("settings",0);
