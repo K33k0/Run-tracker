@@ -1,5 +1,14 @@
 # RunZone changelog
 
+## v1.2.7
+
+- Pause, resume, or finish and save a run from its notification, including on the lock screen.
+- Delete runs from their detail page. Copies already uploaded to Smashrun, Strava, or Runalyze are kept there.
+- Keep distance, duration, and pace on screen during a run without scrolling.
+- Show current pace over the last 30 seconds alongside average pace.
+- Buzz and announce each kilometre with its split time. Turn this off in Settings.
+- Show long runs as hours, minutes, and seconds in the run list.
+
 ## v1.2.6
 
 - Automatically save the run in progress every 30 seconds. If RunZone is closed unexpectedly, the next launch offers to keep or discard the unfinished run.
