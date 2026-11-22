@@ -104,6 +104,17 @@ public class RunService extends Service implements LocationListener {
         @Override public void onAccuracyChanged(Sensor sensor, int accuracy) {}
     };
     public final DistanceGoal distanceGoal=new DistanceGoal();
+    private final RollingPace rollingPace=new RollingPace();
+    private final KmSplits kmSplits=new KmSplits();
+    private android.speech.tts.TextToSpeech speech;
+    private boolean speechReady;
+    /** Pace over the last ~30 s of running in seconds per km, or -1 when unknown. */
+    public long currentPace(){return running&&!paused?rollingPace.secondsPerKm(elapsed()):-1;}
+    private void announceKm(long splitMs){
+        if(!getSharedPreferences("settings",0).getBoolean("kmAlerts",true))return;
+        RunHaptics.play(this,RunHaptics.KM);
+        if(speech!=null&&speechReady)speech.speak(KmSplits.announcement(kmSplits.completed(),splitMs),android.speech.tts.TextToSpeech.QUEUE_FLUSH,null,"km");
+    }
     private long goalFeedbackUntil;
     private final ZoneCoach coach=new ZoneCoach();
     private final ZoneBeep zoneBeep=new ZoneBeep();
@@ -140,6 +151,7 @@ public class RunService extends Service implements LocationListener {
         getSystemService(NotificationManager.class).createNotificationChannel(new NotificationChannel("run", "Active run", NotificationManager.IMPORTANCE_LOW));
         locations = getSystemService(LocationManager.class);
         try { tone = new ToneGenerator(AudioManager.STREAM_MUSIC,85); } catch (RuntimeException ignored) {}
+        speech=new android.speech.tts.TextToSpeech(this,status->{speechReady=status==android.speech.tts.TextToSpeech.SUCCESS&&speech!=null;if(speechReady)speech.setLanguage(Locale.getDefault());});
         handler.post(paceCheck);
     }
     private PendingIntent control(String action,int code){return PendingIntent.getService(this,code,new Intent(this,RunService.class).setAction(action),PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);}
@@ -175,7 +187,7 @@ public class RunService extends Service implements LocationListener {
             runWakeLock=getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"RunZone:recording");
             runWakeLock.setReferenceCounted(false);
             runWakeLock.acquire(120000);wakeRenewedAt=started;
-            startedAt=System.currentTimeMillis();trackIndex=0;draftSavedAt=started;beepLoop=false;handler.removeCallbacks(beepCheck);
+            startedAt=System.currentTimeMillis();trackIndex=0;draftSavedAt=started;rollingPace.reset();kmSplits.reset();beepLoop=false;handler.removeCallbacks(beepCheck);
             autoPaused=false;autoPause.reset();recentSpeed=Double.NaN;speedAnchor=null;segmentStarted=started;
             zoneLow=getSharedPreferences("settings",0).getInt("low",120);zoneHigh=getSharedPreferences("settings",0).getInt("high",150);
             coach.reset(); distanceTracker.reset(); route.clear(); points=new JSONArray();heartSamples=new JSONArray();timerOffsets=new JSONArray();
@@ -226,7 +238,7 @@ public class RunService extends Service implements LocationListener {
         recentSteps.clear();lastCadenceAt=0;
         if (paused) {pausedTotal += now-pausedAt;trackIndex++;} else pausedAt=now;
         goalFeedbackUntil=0;RunHaptics.cancel(this);
-        paused=value;autoPaused=value&&automatic;segmentStarted=now;distanceTracker.reset();coach.reset();autoPause.reset();route.add(null);
+        paused=value;autoPaused=value&&automatic;rollingPace.reset();segmentStarted=now;distanceTracker.reset();coach.reset();autoPause.reset();route.add(null);
         zoneBeep.reset();if(tone!=null)tone.stopTone();bpmToneActive=false;
         ensureBeepLoop();
         promote(gatt!=null);
@@ -258,7 +270,11 @@ public class RunService extends Service implements LocationListener {
         if(paused) return;
         if(location.getElapsedRealtimeNanos()/1000000<segmentStarted)return;
         meters+=distanceTracker.accept(location.getLatitude(),location.getLongitude(),location.getElapsedRealtimeNanos()/1000000);
-        if(distanceGoal.accept(meters)){
+        rollingPace.accept(elapsed(),meters);
+        long split=kmSplits.accept(meters,elapsed());
+        boolean goalReached=distanceGoal.accept(meters);
+        if(split>0&&!goalReached)announceKm(split);
+        if(goalReached){
             goalFeedbackUntil=SystemClock.elapsedRealtime()+4000;
             zoneBeep.reset();bpmToneActive=false;
             if(tone!=null){tone.stopTone();tone.startTone(ToneGenerator.TONE_CDMA_CONFIRM,1800);}
@@ -375,6 +391,7 @@ public class RunService extends Service implements LocationListener {
         if(locations!=null) locations.removeUpdates(this);
         if(gatt!=null) { try { gatt.disconnect(); gatt.close(); } catch(SecurityException ignored) {} }
         if(running)saveDraft();draftWriter.shutdown();
+        if(speech!=null){speech.shutdown();speech=null;speechReady=false;}
         handler.removeCallbacksAndMessages(null); if(tone!=null) tone.release(); current=null; super.onDestroy();
     }
     @Override public IBinder onBind(Intent intent) { return null; }
