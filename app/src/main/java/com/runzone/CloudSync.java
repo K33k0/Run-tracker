@@ -20,6 +20,8 @@ final class CloudSync {
             JSONObject entry=new JSONObject().put("run",file.getName()).put("provider",provider).put("session",session).put("automatic",automatic).put("status","pending").put("attempts",0);save(c,key,entry);schedule(c);
         }catch(JSONException ignored){}
     }
+    /** Drops a deleted run from the upload queue. Copies already on a service are left alone. */
+    static void forget(Context c,String run){SharedPreferences.Editor edit=queue(c).edit();for(String provider:CloudAccounts.PROVIDERS)edit.remove(run+"|"+provider);edit.apply();}
     static void schedule(Context c){try{JobScheduler jobs=c.getSystemService(JobScheduler.class);jobs.schedule(new JobInfo.Builder(JOB,new ComponentName(c,SyncJob.class)).setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setPersisted(true).setMinimumLatency(1000).setBackoffCriteria(30000,JobInfo.BACKOFF_POLICY_EXPONENTIAL).build());}catch(RuntimeException ignored){}}
     private static JSONObject entry(Context c,String key){try{return new JSONObject(queue(c).getString(key,"{}"));}catch(JSONException e){return new JSONObject();}}
     private static void save(Context c,String key,JSONObject entry){queue(c).edit().putString(key,entry.toString()).commit();}
