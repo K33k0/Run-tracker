@@ -19,7 +19,7 @@ import java.util.*;
 public class MainActivity extends Activity implements LocationListener {
     private static final int BG=0xff101819,CARD=0xff1b2627,LINE=0xff30403e,TEXT=0xfff2f5ee,MUTED=0xff9eafaa,LIME=0xffc2f970;
     private LinearLayout root,content;
-    private TextView heart,status,sensorLabel,gpsLabel,distance,duration,pace,target,start,finish,backgroundLabel,distanceTarget;
+    private TextView heart,status,sensorLabel,gpsLabel,distance,duration,pace,target,start,finish,backgroundLabel,distanceTarget,currentPace;
     private ZoneTrack zoneTrack;
     private LiveMapView map;
     private String screen="Run",selected;
@@ -105,13 +105,13 @@ public class MainActivity extends Activity implements LocationListener {
         mapCard.addView(attribution,new FrameLayout.LayoutParams(-2,-2,Gravity.BOTTOM|Gravity.RIGHT));
         int mapHeight=Math.max(270,Math.min(420,Math.round(getResources().getDisplayMetrics().heightPixels/getResources().getDisplayMetrics().density)-700));
         content.addView(mapCard,new LinearLayout.LayoutParams(-1,dp(mapHeight)));gap(content,16);
-        LinearLayout stats=row();stats.setPadding(dp(8),dp(8),dp(8),dp(8));distance=stat(stats,"DISTANCE","0.00","km");duration=stat(stats,"DURATION","00:00","active time");pace=stat(stats,"AVG PACE","—","min / km");content.addView(stats);
+        LinearLayout stats=row();stats.setPadding(dp(8),dp(8),dp(8),dp(8));stats.setBackgroundColor(CARD);distance=stat(stats,"DISTANCE","0.00","km");duration=stat(stats,"DURATION","00:00","active time");currentPace=stat(stats,"PACE","—","last 30 s");pace=stat(stats,"AVG PACE","—","min / km");root.addView(stats);
         LinearLayout actions=row();actions.setPadding(dp(20),dp(10),dp(20),dp(6));
         start=pill("Start run  →",LIME,BG,v->{RunService s=RunService.current;if(s!=null&&s.running){s.togglePause();render();}else begin();});weighted(actions,start);
         finish=pill("Finish",CARD,TEXT,v->finishSession());LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(dp(100),-2);fp.leftMargin=dp(10);actions.addView(finish,fp);root.addView(actions);
     }
     private TextView mapControl(String symbol,View.OnClickListener listener){TextView t=pill(symbol,0xf5f8fbf4,0xff294333,listener);t.setTextSize(22);t.setPadding(0,dp(5),0,dp(5));t.setMinHeight(dp(42));return t;}
-    private TextView stat(LinearLayout parent,String title,String value,String unit){LinearLayout c=column();c.setGravity(Gravity.CENTER);TextView label=bold(title,9,MUTED);label.setLetterSpacing(.08f);c.addView(label);gap(c,8);TextView number=bold(value,25,TEXT);c.addView(number);gap(c,5);c.addView(text(unit,10,MUTED));weighted(parent,c);return number;}
+    private TextView stat(LinearLayout parent,String title,String value,String unit){LinearLayout c=column();c.setGravity(Gravity.CENTER);TextView label=bold(title,9,MUTED);label.setLetterSpacing(.08f);c.addView(label);gap(c,8);TextView number=bold(value,22,TEXT);c.addView(number);gap(c,5);c.addView(text(unit,10,MUTED));weighted(parent,c);return number;}
     private void render(){
         if("Settings".equals(screen)){if(backgroundLabel!=null)backgroundLabel.setText(backgroundSummary());for(Map.Entry<String,TextView> label:settingsAccountLabels.entrySet())label.getValue().setText(CloudAccounts.summary(this,label.getKey()));return;}
         if("Detail".equals(screen)&&detailFile!=null){for(Map.Entry<String,TextView> label:syncLabels.entrySet())label.getValue().setText(CloudSync.status(this,detailFile.getName(),label.getKey()));return;}
@@ -125,6 +125,7 @@ public class MainActivity extends Activity implements LocationListener {
         long seconds=running?s.elapsed()/1000:0;double meters=running?s.meters:0;distance.setText(String.format(Locale.getDefault(),"%.2f",meters/1000));
         duration.setText(seconds>=3600?String.format(Locale.getDefault(),"%d:%02d:%02d",seconds/3600,(seconds/60)%60,seconds%60):String.format(Locale.getDefault(),"%02d:%02d",seconds/60,seconds%60));
         long paceSeconds=meters>=20?Math.round(seconds/(meters/1000)):0;pace.setText(paceSeconds>0?String.format(Locale.getDefault(),"%d:%02d",paceSeconds/60,paceSeconds%60):"—");
+        long now=running?s.currentPace():-1;currentPace.setText(now>0?String.format(Locale.getDefault(),"%d:%02d",now/60,now%60):"—");
         start.setText(running?(s.paused?"Resume run  →":"Pause run  Ⅱ"):"Start run  →");finish.setVisibility(running?View.VISIBLE:View.GONE);
         Location fix=running&&s.lastFix!=null?s.lastFix:previewFix;boolean fresh=fix!=null&&SystemClock.elapsedRealtimeNanos()-fix.getElapsedRealtimeNanos()<30_000_000_000L;
         gpsLabel.setText(running?(s.paused?"PAUSED • LOCATION LIVE":s.gps):fresh?"YOUR LOCATION • LIVE":hasLocation()?"WAITING FOR GPS":"TAP ◎ TO ENABLE LOCATION");
@@ -165,7 +166,7 @@ public class MainActivity extends Activity implements LocationListener {
         gap(training,18);settingRow(training,"Distance target",distanceTargetLabel(),v->distanceTarget());
         gap(training,18);settingRow(training,"Test strong vibrations","Three long pulses at maximum supported strength",v->testHaptics());
         gap(training,18);android.content.SharedPreferences preferences=getSharedPreferences("settings",0);
-        Switch beeps=new Switch(this);beeps.setText("BPM-paced zone beeps");beeps.setTextSize(17);beeps.setTextColor(TEXT);beeps.setChecked(preferences.getBoolean("zoneBeeps",false));beeps.setOnCheckedChangeListener((button,enabled)->{preferences.edit().putBoolean("zoneBeeps",enabled).apply();if(RunService.current!=null)RunService.current.updateZoneBeeps();});training.addView(beeps);
+        Switch beeps=new Switch(this);beeps.setText("BPM-paced zone beeps");beeps.setTextSize(17);beeps.setTextColor(TEXT);beeps.setChecked(preferences.getBoolean("zoneBeeps",false));beeps.setOnCheckedChangeListener((button,enabled)->{preferences.edit().putBoolean("zoneBeeps",enabled).apply();if(RunService.current!=null)RunService.current.updateZoneBeeps();});training.addView(beeps);gap(training,8);Switch km=new Switch(this);km.setText("Announce each kilometre");km.setTextSize(17);km.setTextColor(TEXT);km.setChecked(preferences.getBoolean("kmAlerts",true));km.setOnCheckedChangeListener((button,enabled)->preferences.edit().putBoolean("kmAlerts",enabled).apply());training.addView(km);
         training.addView(text("Beep at your BPM above or below target; stop when back in range.",13,MUTED));gap(training,18);
         Switch auto=new Switch(this);auto.setText("Auto-pause");auto.setTextSize(17);auto.setTextColor(TEXT);auto.setChecked(preferences.getBoolean("autoPause",false));auto.setOnCheckedChangeListener((button,enabled)->preferences.edit().putBoolean("autoPause",enabled).apply());training.addView(auto);
         gap(training,12);settingRow(training,"Pause when slower than",paceLabel(preferences.getInt("pausePace",720))+" min/km · 10-second delay",v->autoPausePace());
@@ -191,7 +192,7 @@ public class MainActivity extends Activity implements LocationListener {
         heading("Your runs","Every run is a step forward.");java.io.File[] files=new java.io.File(getFilesDir(),"runs").listFiles();int count=0;
         if(files!=null){Arrays.sort(files,Collections.reverseOrder());for(java.io.File file:files)try{
             org.json.JSONObject run=new org.json.JSONObject(new String(java.nio.file.Files.readAllBytes(file.toPath()),java.nio.charset.StandardCharsets.UTF_8));LinearLayout c=card();smallTitle(c,java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(new Date(run.getLong("date"))).toUpperCase(Locale.getDefault()));gap(c,12);
-            c.addView(bold(String.format(Locale.getDefault(),"%.2f km",run.getDouble("meters")/1000),30,TEXT));gap(c,8);long seconds=run.getLong("duration")/1000;c.addView(text(String.format(Locale.getDefault(),"%d min %02d sec  ·  %s",seconds/60,seconds%60,java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(new Date(run.getLong("date")))),13,MUTED));gap(c,12);c.addView(bold("View run & stats  ›",13,LIME));c.setOnClickListener(v->openRun(file));content.addView(c);gap(content,12);count++;
+            c.addView(bold(String.format(Locale.getDefault(),"%.2f km",run.getDouble("meters")/1000),30,TEXT));gap(c,8);long seconds=run.getLong("duration")/1000;c.addView(text(String.format(Locale.getDefault(),"%s  ·  %s",seconds>=3600?String.format(Locale.getDefault(),"%d:%02d:%02d",seconds/3600,(seconds/60)%60,seconds%60):String.format(Locale.getDefault(),"%d:%02d",seconds/60,seconds%60),java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(new Date(run.getLong("date")))),13,MUTED));gap(c,12);c.addView(bold("View run & stats  ›",13,LIME));c.setOnClickListener(v->openRun(file));content.addView(c);gap(content,12);count++;
         }catch(Exception ignored){}}
         if(count==0){LinearLayout c=card();c.addView(bold("Your first run starts here.",22,TEXT));gap(c,12);c.addView(text("Finish and save a run to see your progress here.",14,MUTED));gap(c,20);c.addView(pill("Let’s go  →",LIME,BG,v->show("Run")));content.addView(c);}
     }
