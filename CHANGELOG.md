@@ -1,5 +1,13 @@
 # RunZone changelog
 
+## Unreleased
+
+- Fix zone beeps sounding doubled while music is playing.
+- New run analysis on each run's detail page: metres per heartbeat, grade-adjusted pace (overall, per kilometre, and charted with elevation), rolling 60-second efficiency, aerobic decoupling, time in zone, cadence and estimated step length, heart-rate variability (RMSSD and DFA α1) during steady effort, and best efforts within the run.
+- Record heart rate for 2 minutes after finishing while the sensor stays connected, and show heart-rate recovery at 1 and 2 minutes.
+- Compare runs on the same route: grade-adjusted pace and efficiency for every run of that course.
+- Trends on the run list: weekly distance, and efficiency, grade-adjusted pace and decoupling across your last 12 weeks.
+
 ## v1.2.7
 
 - Pause, resume, or finish and save a run from its notification, including on the lock screen.

@@ -135,7 +135,9 @@ public class RunService extends Service implements LocationListener {
         boolean enabled=prefs.getBoolean("zoneBeeps",false)&&ZoneCoach.enabled(running,paused,autoPaused);
         int zone=zoneBeep.accept(enabled,fresh,prefs.getInt("low",120),prefs.getInt("high",150),SystemClock.elapsedRealtime());
         if(tone!=null){
-            if(zone!=0){tone.startTone(zone>0?ToneGenerator.TONE_PROP_BEEP:ToneGenerator.TONE_PROP_BEEP2,80);bpmToneActive=true;}
+            // Continuous tones only: TONE_PROP_BEEP2 is a two-pulse pattern, and with music playing the mixer's
+            // larger buffers let the second pulse through the 80 ms cut-off, so every beat sounded doubled.
+            if(zone!=0){tone.startTone(zone>0?ToneGenerator.TONE_DTMF_D:ToneGenerator.TONE_SUP_DIAL,80);bpmToneActive=true;}
             else if(!enabled||!RunRecord.validBpm(fresh)||HeartRate.zone(fresh,prefs.getInt("low",120),prefs.getInt("high",150))==0){
                 if(bpmToneActive){tone.stopTone();bpmToneActive=false;}
             }
@@ -304,6 +306,9 @@ public class RunService extends Service implements LocationListener {
             if(intervals.length()>0)pulse.put("rrTicks",intervals);
             heartSamples.put(pulse);
         }catch(JSONException ignored){}
+        else if(!running&&recoveryFile!=null&&SystemClock.elapsedRealtime()<recoveryUntil&&RunRecord.validBpm(bpm))try{
+            recoverySamples.put(new JSONObject().put("time",System.currentTimeMillis()).put("bpm",bpm));
+        }catch(JSONException ignored){}
         android.content.SharedPreferences prefs=getSharedPreferences("settings",0);
         updateZoneBeeps();
         int zone=coach.accept(ZoneCoach.enabled(running,paused,autoPaused),bpm,prefs.getInt("low",120),prefs.getInt("high",150),lastHr);
@@ -373,6 +378,26 @@ public class RunService extends Service implements LocationListener {
         return new JSONObject().put("schemaVersion",2).put("date",startedAt).put("startTime",startedAt).put("endTime",startedAt+now-started)
             .put("meters",meters).put("duration",active).put("route",points).put("heartRate",heartSamples).put("timerOffsets",timerOffsets).put("cadence",cadenceSamples).put("zoneLow",zoneLow).put("zoneHigh",zoneHigh).put("distanceTargetMeters",distanceGoal.targetMeters()).put("distanceTargetReached",distanceGoal.reached());
     }
+    /** After a run is saved, heart rate keeps being recorded for this long to measure recovery. */
+    static final long RECOVERY_MS=120000;
+    private java.io.File recoveryFile;
+    private JSONArray recoverySamples=new JSONArray();
+    private long recoveryUntil;
+    private final Runnable recoveryDone=this::flushRecovery;
+    /** Adds the recovery heart rate to the saved run file and stops recording it. */
+    private void flushRecovery(){
+        handler.removeCallbacks(recoveryDone);
+        final java.io.File file=recoveryFile;final JSONArray samples=recoverySamples;
+        recoveryFile=null;recoverySamples=new JSONArray();recoveryUntil=0;
+        if(file==null||samples.length()==0)return;
+        draftWriter.execute(()->{
+            try{
+                if(!file.exists())return;
+                JSONObject json=new JSONObject(new String(java.nio.file.Files.readAllBytes(file.toPath()),java.nio.charset.StandardCharsets.UTF_8));
+                writeAtomically(file,json.put("recovery",samples).toString());
+            }catch(Exception e){android.util.Log.w("RunZone","Could not save recovery heart rate",e);}
+        });
+    }
     public boolean save() {
         try {
             java.io.File dir=new java.io.File(getFilesDir(),"runs"); if(!dir.exists() && !dir.mkdirs()) return false;
@@ -380,6 +405,9 @@ public class RunService extends Service implements LocationListener {
             writeAtomically(file,snapshot().toString());
             deleteDraft();
             CloudSync.enqueueNew(this,file);
+            flushRecovery();
+            recoveryFile=file;recoveryUntil=SystemClock.elapsedRealtime()+RECOVERY_MS;
+            handler.postDelayed(recoveryDone,RECOVERY_MS+1000);
             return true;
         } catch(Exception e) { android.util.Log.e("RunZone","Could not save run",e); return false; }
     }
@@ -390,7 +418,7 @@ public class RunService extends Service implements LocationListener {
         if(runWakeLock!=null&&runWakeLock.isHeld())runWakeLock.release();
         if(locations!=null) locations.removeUpdates(this);
         if(gatt!=null) { try { gatt.disconnect(); gatt.close(); } catch(SecurityException ignored) {} }
-        if(running)saveDraft();draftWriter.shutdown();
+        if(running)saveDraft();flushRecovery();draftWriter.shutdown();
         if(speech!=null){speech.shutdown();speech=null;speechReady=false;}
         handler.removeCallbacksAndMessages(null); if(tone!=null) tone.release(); current=null; super.onDestroy();
     }

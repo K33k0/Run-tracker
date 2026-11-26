@@ -50,14 +50,17 @@ public final class RunRecord {
     // Null for recordings made before timer transitions were saved. Offsets alternate stop/start.
     final List<Long> timerOffsets;
     final List<Cadence> cadence;
+    /** Heart rate recorded after the run finished, for recovery analysis. Track is always 0. */
+    public final List<Pulse> recovery;
     public RunRecord(long start,long end,long duration,double distance,int low,int high,boolean legacy,List<Point> points,List<Pulse> pulses){
-        this(start,end,duration,distance,low,high,legacy,points,pulses,null,Collections.emptyList());
+        this(start,end,duration,distance,low,high,legacy,points,pulses,null,Collections.emptyList(),Collections.emptyList());
     }
-    private RunRecord(long start,long end,long duration,double distance,int low,int high,boolean legacy,List<Point> points,List<Pulse> pulses,List<Long> timerOffsets,List<Cadence> cadence){
+    private RunRecord(long start,long end,long duration,double distance,int low,int high,boolean legacy,List<Point> points,List<Pulse> pulses,List<Long> timerOffsets,List<Cadence> cadence,List<Pulse> recovery){
         startTime=start;endTime=Math.max(start,end);durationMs=Math.max(0,duration);elapsedMs=Math.max(durationMs,endTime-startTime);meters=Math.max(0,distance);this.low=low;this.high=high;this.legacy=legacy;
         this.points=Collections.unmodifiableList(new ArrayList<>(points));this.pulses=Collections.unmodifiableList(new ArrayList<>(pulses));
         this.timerOffsets=timerOffsets==null?null:Collections.unmodifiableList(timerOffsets);
         this.cadence=Collections.unmodifiableList(cadence);
+        this.recovery=Collections.unmodifiableList(new ArrayList<>(recovery));
     }
     public static RunRecord read(File file)throws IOException,JSONException {return fromJson(new JSONObject(new String(Files.readAllBytes(file.toPath()),StandardCharsets.UTF_8)));}
     public static RunRecord fromJson(JSONObject json)throws JSONException {
@@ -103,7 +106,10 @@ public final class RunRecord {
             int sampleTrack=sample.optInt("track",0),spm=sample.optInt("spm",0);
             if(time>=start&&time<=end&&sampleTrack>=0&&spm>0&&spm<510)cadence.add(new Cadence(time,sampleTrack,spm));
         }
-        return new RunRecord(start,end,duration,meters,json.optInt("zoneLow",0),json.optInt("zoneHigh",0),legacy,points,pulses,offsets,cadence);
+        ArrayList<Pulse> recovery=new ArrayList<>();JSONArray after=json.optJSONArray("recovery");
+        if(after!=null)for(int i=0;i<after.length();i++){JSONObject p=after.getJSONObject(i);int bpm=p.optInt("bpm",-1);long time=p.optLong("time",0);if(validBpm(bpm)&&time>=end)recovery.add(new Pulse(time,-1,bpm,0));}
+        recovery.sort(Comparator.comparingLong(p->p.time));
+        return new RunRecord(start,end,duration,meters,json.optInt("zoneLow",0),json.optInt("zoneHigh",0),legacy,points,pulses,offsets,cadence,recovery);
     }
     public static boolean validBpm(int value){return value>0&&value<=255;}
     private static int[] readRrTicks(JSONArray values){
