@@ -1,5 +1,14 @@
 # RunZone changelog
 
+## Unreleased
+
+- Training load and readiness: every run with heart rate gets a load score. The run list shows fitness, fatigue and form over 12 weeks, with a daily verdict (Fresh, Balanced, Building, Take it easy or Overreaching). The run screen shows today's verdict.
+- Morning HRV check: 2 minutes lying still with your strap on. It measures resting HRV and heart rate, and readiness compares each morning with your last week.
+- Zone suggestions: RunZone finds your maximum heart rate from your runs, and your aerobic threshold from steady runs where possible, then suggests zone boundaries you can apply in one tap. Maximum and resting heart rate can also be set by hand.
+- Charts are interactive: drag to read values, pinch to zoom, double-tap to reset.
+- Back up all runs, HRV checks and training settings to one file, and restore them on any phone. Account sign-ins are never included.
+- Redesigned Settings, grouped into Your heart, During a run, Auto-pause, Your data, Sensor & phone, and About, with on/off switches beside each option.
+
 ## v1.2.8
 
 - Fix zone beeps sounding doubled while music is playing.

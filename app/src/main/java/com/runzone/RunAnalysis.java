@@ -302,20 +302,31 @@ public final class RunAnalysis {
                 if(m<1.5||ssd/m>0.12)continue;
             }
             while(cursor<intervals.size()&&intervals.get(cursor)[0]<start*1000.0)cursor++;
-            ArrayList<Double> clean=new ArrayList<>();double previous=Double.NaN;
-            for(int i=cursor;i<intervals.size()&&intervals.get(i)[0]<(start+120)*1000.0;i++){
-                double ms=intervals.get(i)[1];
-                if(Double.isNaN(previous)||Math.abs(ms-previous)<=previous*0.2)clean.add(ms);
-                previous=ms;
-            }
+            ArrayList<Double> raw=new ArrayList<>();
+            for(int i=cursor;i<intervals.size()&&intervals.get(i)[0]<(start+120)*1000.0;i++)raw.add(intervals.get(i)[1]);
+            List<Double> clean=cleanIntervals(raw);
             double expected=mean*2;
             if(clean.size()<expected*0.8||clean.size()<60)continue;
-            double diff=0;for(int i=1;i<clean.size();i++){double d=clean.get(i)-clean.get(i-1);diff+=d*d;}
-            windows.add(new HrvWindow(start,Math.sqrt(diff/(clean.size()-1)),dfaAlpha1(clean),mean));
+            windows.add(new HrvWindow(start,rmssd(clean),dfaAlpha1(clean),mean));
         }
         return windows;
     }
 
+    /** Drops intervals outside 270–2000 ms or more than 20 % away from the previous interval. */
+    static List<Double> cleanIntervals(List<Double> rr){
+        ArrayList<Double> clean=new ArrayList<>();double previous=Double.NaN;
+        for(double ms:rr){
+            if(ms<270||ms>2000)continue;
+            if(Double.isNaN(previous)||Math.abs(ms-previous)<=previous*0.2)clean.add(ms);
+            previous=ms;
+        }
+        return clean;
+    }
+    static double rmssd(List<Double> clean){
+        if(clean.size()<2)return Double.NaN;
+        double diff=0;for(int i=1;i<clean.size();i++){double d=clean.get(i)-clean.get(i-1);diff+=d*d;}
+        return Math.sqrt(diff/(clean.size()-1));
+    }
     /** Short-term detrended fluctuation analysis exponent over box sizes 4–16 beats. */
     static double dfaAlpha1(List<Double> rr){
         int size=rr.size();if(size<50)return Double.NaN;

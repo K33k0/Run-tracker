@@ -86,7 +86,7 @@ public class MainActivity extends Activity implements LocationListener {
     private void home(){
         LinearLayout header=row();header.addView(bold("r/",27,LIME));TextView name=bold("runzone",24,TEXT);name.setPadding(dp(8),0,0,0);weighted(header,name);
         header.addView(pill("Settings",CARD,MUTED,v->show("Settings")));content.addView(header);gap(content,24);
-        smallTitle(content,"TRAIN WITH INTENTION");gap(content,8);content.addView(bold("Find your rhythm.",29,TEXT));gap(content,12);distanceTarget=pill("Set distance target  ›",CARD,LIME,v->distanceTarget());content.addView(distanceTarget);gap(content,16);
+        smallTitle(content,"TRAIN WITH INTENTION");gap(content,8);content.addView(bold("Find your rhythm.",29,TEXT));gap(content,8);TextView readiness=bold(readinessHint(),13,LIME);readiness.setPadding(0,dp(4),0,dp(4));readiness.setOnClickListener(v->show("History"));readiness.setContentDescription("Today's training readiness. Opens training details.");content.addView(readiness);refreshTraining(t->readiness.setText(readinessHint()));gap(content,8);distanceTarget=pill("Set distance target  ›",CARD,LIME,v->distanceTarget());content.addView(distanceTarget);gap(content,16);
         LinearLayout heartCard=card(),top=row();TextView live=bold("♥  LIVE HEART RATE",11,LIME);live.setLetterSpacing(.1f);weighted(top,live);
         TextView sensor=pill("Sensor  ›",0xff2a3835,TEXT,v->devices());sensor.setMinHeight(dp(36));sensor.setPadding(dp(12),dp(8),dp(12),dp(8));top.addView(sensor);heartCard.addView(top);gap(heartCard,8);
         LinearLayout numbers=row();numbers.setGravity(Gravity.BOTTOM);heart=bold("—",68,TEXT);numbers.addView(heart);TextView unit=text("bpm",17,MUTED);unit.setPadding(dp(8),0,0,dp(12));numbers.addView(unit);
@@ -160,37 +160,170 @@ public class MainActivity extends Activity implements LocationListener {
         new AlertDialog.Builder(this).setTitle("Save your run?").setMessage("Your route, distance and active time will be saved. Your heart-rate sensor stays connected.").setPositiveButton("Save run",(d,w)->{if(s.save()){s.finishRun();Toast.makeText(this,"Run saved. Nice work.",Toast.LENGTH_SHORT).show();render();}else Toast.makeText(this,"Couldn't save. Your run is still active; try again.",Toast.LENGTH_LONG).show();}).setNeutralButton("Discard run",(d,w)->new AlertDialog.Builder(this).setTitle("Discard this run?").setMessage("Stop recording without saving? This run cannot be recovered.").setPositiveButton("Discard run",(confirm,which)->{if(s.running){s.discardRun();render();Toast.makeText(this,"Run discarded",Toast.LENGTH_SHORT).show();}}).setNegativeButton("Keep run",null).show()).setNegativeButton("Keep running",null).show();
     }
     private void settings(){
-        heading("Settings","Make RunZone work for the way you train.");smallTitle(content,"TRAINING");gap(content,12);
-        LinearLayout training=card();int low=getSharedPreferences("settings",0).getInt("low",120),high=getSharedPreferences("settings",0).getInt("high",150);
-        settingRow(training,"Heart-rate zones","Zone "+(getSharedPreferences("settings",0).getInt("profile",2)+1)+" · "+low+"–"+high+" bpm",v->zones());
-        gap(training,18);settingRow(training,"Distance target",distanceTargetLabel(),v->distanceTarget());
-        gap(training,18);settingRow(training,"Test strong vibrations","Three long pulses at maximum supported strength",v->testHaptics());
-        gap(training,18);android.content.SharedPreferences preferences=getSharedPreferences("settings",0);
-        Switch beeps=new Switch(this);beeps.setText("BPM-paced zone beeps");beeps.setTextSize(17);beeps.setTextColor(TEXT);beeps.setChecked(preferences.getBoolean("zoneBeeps",false));beeps.setOnCheckedChangeListener((button,enabled)->{preferences.edit().putBoolean("zoneBeeps",enabled).apply();if(RunService.current!=null)RunService.current.updateZoneBeeps();});training.addView(beeps);gap(training,8);Switch km=new Switch(this);km.setText("Announce each kilometre");km.setTextSize(17);km.setTextColor(TEXT);km.setChecked(preferences.getBoolean("kmAlerts",true));km.setOnCheckedChangeListener((button,enabled)->preferences.edit().putBoolean("kmAlerts",enabled).apply());training.addView(km);
-        training.addView(text("Beep at your BPM above or below target; stop when back in range.",13,MUTED));gap(training,18);
-        Switch auto=new Switch(this);auto.setText("Auto-pause");auto.setTextSize(17);auto.setTextColor(TEXT);auto.setChecked(preferences.getBoolean("autoPause",false));auto.setOnCheckedChangeListener((button,enabled)->preferences.edit().putBoolean("autoPause",enabled).apply());training.addView(auto);
-        gap(training,12);settingRow(training,"Pause when slower than",paceLabel(preferences.getInt("pausePace",720))+" min/km · 10-second delay",v->autoPausePace());
-        content.addView(training);gap(content,22);smallTitle(content,"AUTO SYNC");gap(content,12);
+        heading("Settings","Make RunZone work for the way you train.");
+        android.content.SharedPreferences preferences=getSharedPreferences("settings",0);
+        int low=preferences.getInt("low",120),high=preferences.getInt("high",150);
+
+        smallTitle(content,"YOUR HEART");gap(content,12);LinearLayout you=card();
+        settingRow(you,"Heart-rate zones","Target: Zone "+(preferences.getInt("profile",2)+1)+" · "+low+"–"+high+" bpm · suggestions from your runs",v->zones());
+        divider(you);maxHeartLabel=settingRow(you,"Maximum heart rate",heartSetting("maxBpm",cachedObservedMax,"from your runs",190),v->heartRateSetting(true));
+        divider(you);restingHeartLabel=settingRow(you,"Resting heart rate",heartSetting("restingBpm",cachedResting,"from morning checks",60),v->heartRateSetting(false));
+        divider(you);settingRow(you,"Morning HRV check","2 minutes lying still with your strap on · sets readiness and resting HR",v->morningCheck());
+        content.addView(you);gap(content,22);
+
+        smallTitle(content,"DURING A RUN");gap(content,12);LinearLayout run=card();
+        toggleRow(run,"BPM-paced zone beeps","Beep at your heart rate while you’re outside your zone. Otherwise you get one alert every 20 seconds.","zoneBeeps",false,enabled->{if(RunService.current!=null)RunService.current.updateZoneBeeps();});
+        divider(run);toggleRow(run,"Announce each kilometre","Vibrate and read out your split time.","kmAlerts",true,null);
+        divider(run);settingRow(run,"Distance target",distanceTargetLabel(),v->distanceTarget());
+        divider(run);settingRow(run,"Test strong vibrations","Try the below-zone, above-zone and distance patterns",v->testHaptics());
+        note(run,"Alerts start after 5 seconds outside your target and repeat every 20 seconds, including during auto-pause. Manual pause silences them. Keep media volume up.");
+        content.addView(run);gap(content,22);
+
+        smallTitle(content,"AUTO-PAUSE");gap(content,12);LinearLayout auto=card();
+        toggleRow(auto,"Auto-pause","Pauses after 10 seconds below your threshold pace and resumes after 3 seconds above it. Manual pauses always need a manual resume.","autoPause",false,null);
+        divider(auto);settingRow(auto,"Pause when slower than",paceLabel(preferences.getInt("pausePace",720))+" min/km",v->autoPausePace());
+        content.addView(auto);gap(content,22);
+
+        smallTitle(content,"YOUR DATA");gap(content,12);LinearLayout data=card();
+        settingRow(data,"Back up runs","Save every run, HRV check and training setting to one file",v->startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).setType(Backup.MIME).addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_TITLE,"runzone-backup-"+new java.text.SimpleDateFormat("yyyy-MM-dd",Locale.ROOT).format(new Date())+".zip"),81));
+        divider(data);settingRow(data,"Restore from backup","Adds missing runs from a backup file. Runs already on this phone are kept.",v->startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").putExtra(Intent.EXTRA_MIME_TYPES,new String[]{Backup.MIME,"application/x-zip-compressed","application/octet-stream"}).addCategory(Intent.CATEGORY_OPENABLE),82));
         settingsAccountLabels.clear();CloudAccounts.refreshReadiness(this);
-        LinearLayout sync=card();for(String provider:CloudAccounts.PROVIDERS){TextView label=settingRow(sync,CloudAccounts.name(provider),CloudAccounts.summary(this,provider),v->accountOptions(provider));settingsAccountLabels.put(provider,label);gap(sync,12);}content.addView(sync);
-        gap(content,22);smallTitle(content,"CONNECTIONS");gap(content,12);
-        LinearLayout connections=card();settingRow(connections,"Heart-rate sensor",RunService.current==null?"Connect for live BPM, even before a run":RunService.current.sensor,v->devices());
-        if(RunService.current!=null){gap(connections,16);settingRow(connections,"Disconnect sensor","Stop live readings; keep your run active",v->{if(RunService.current!=null)RunService.current.disconnectSensor();getSharedPreferences("settings",0).edit().remove("device").apply();selected=null;show("Settings");});}
-        content.addView(connections);gap(content,22);smallTitle(content,"LOCATION");gap(content,12);
-        LinearLayout location=card();settingRow(location,"Location settings","Manage your phone’s GPS",v->startActivity(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)));
-        gap(location,18);settingRow(location,"App permissions","Location, nearby devices & physical activity",v->startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName()))));content.addView(location);
-        gap(content,22);smallTitle(content,"BACKGROUND RECORDING");gap(content,12);
-        LinearLayout battery=card();backgroundLabel=settingRow(battery,"Screen-off readiness",backgroundSummary(),v->backgroundSettings());
-        gap(battery,12);battery.addView(text("Allow background usage and choose Unrestricted / Don’t optimise for RunZone. Check your phone’s sleeping-app and auto-start settings too. These checks cannot verify every manufacturer’s restrictions.",13,MUTED));content.addView(battery);
-        gap(content,22);smallTitle(content,"APP UPDATES");gap(content,12);
-        LinearLayout updates=card();settingRow(updates,"Check for updates","Installed: "+BuildConfig.VERSION_NAME+" · Download and install the latest release",v->AppUpdates.check(this,true));
-        gap(updates,12);settingRow(updates,"Release notifications","Daily checks when online; tap to manage notifications",v->{if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},2);else startActivity(new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,getPackageName()));});content.addView(updates);
-        gap(content,24);TextView note=text("YOUR ZONE, YOUR PACE\n\nAlerts sound and vibrate after 5 seconds outside your active target, repeating every 20 seconds during a run, including auto-pause. Manual pause silences alerts. Keep media volume audible.\n\nAuto-pause uses reliable GPS speed. It pauses after 10 seconds below your pace threshold and resumes after 3 seconds at or above it. Manual pauses always need manual resume.\n\nMaps use an internet connection. Recordings stay on your phone unless you export them or connect an account for sync.",13,MUTED);note.setLineSpacing(dp(4),1);content.addView(note);gap(content,20);content.addView(text("RUNZONE  /  VERSION "+BuildConfig.VERSION_NAME,10,MUTED));
+        for(String provider:CloudAccounts.PROVIDERS){divider(data);TextView label=settingRow(data,"Sync to "+CloudAccounts.name(provider),CloudAccounts.summary(this,provider),v->accountOptions(provider));settingsAccountLabels.put(provider,label);}
+        note(data,"Recordings stay on your phone unless you back them up, export them or connect an account. Backups don’t include account sign-ins.");
+        content.addView(data);gap(content,22);
+
+        smallTitle(content,"SENSOR & PHONE");gap(content,12);LinearLayout phone=card();
+        settingRow(phone,"Heart-rate sensor",RunService.current==null?"Connect for live BPM, even before a run":RunService.current.sensor,v->devices());
+        if(RunService.current!=null){divider(phone);settingRow(phone,"Disconnect sensor","Stop live readings and keep your run active",v->{if(RunService.current!=null)RunService.current.disconnectSensor();getSharedPreferences("settings",0).edit().remove("device").apply();selected=null;show("Settings");});}
+        divider(phone);backgroundLabel=settingRow(phone,"Screen-off recording",backgroundSummary(),v->backgroundSettings());
+        divider(phone);settingRow(phone,"Location settings","Manage your phone’s GPS",v->startActivity(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)));
+        divider(phone);settingRow(phone,"App permissions","Location, nearby devices and physical activity",v->startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName()))));
+        note(phone,"For screen-off runs, allow background usage and set battery use to Unrestricted. Some phones also have sleeping-app or auto-start settings that RunZone can’t check.");
+        content.addView(phone);gap(content,22);
+
+        smallTitle(content,"ABOUT");gap(content,12);LinearLayout about=card();
+        settingRow(about,"Check for updates","Installed: "+BuildConfig.VERSION_NAME,v->AppUpdates.check(this,true));
+        divider(about);settingRow(about,"Release notifications","Daily checks when online",v->{if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},2);else startActivity(new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,getPackageName()));});
+        note(about,"Maps use an internet connection. © OpenStreetMap contributors.");
+        content.addView(about);gap(content,20);content.addView(text("RUNZONE  /  VERSION "+BuildConfig.VERSION_NAME,10,MUTED));
+        refreshTraining(null);
+    }
+    private TextView maxHeartLabel,restingHeartLabel;
+    private int cachedObservedMax=-1,cachedResting=-1;
+    private String readinessHint(){String title=getSharedPreferences("settings",0).getString("readinessTitle",null);return title==null?"See your training readiness  ›":"Today: "+title+"  ›";}
+    private void divider(LinearLayout parent){gap(parent,12);View line=new View(this);line.setBackgroundColor(LINE);parent.addView(line,new LinearLayout.LayoutParams(-1,Math.max(1,dp(1)/2)));gap(parent,12);}
+    private void toggleRow(LinearLayout parent,String title,String subtitle,String key,boolean fallback,java.util.function.Consumer<Boolean> changed){
+        android.content.SharedPreferences prefs=getSharedPreferences("settings",0);
+        LinearLayout r=row(),labels=column();labels.addView(bold(title,17,TEXT));gap(labels,6);TextView sub=text(subtitle,12,MUTED);sub.setLineSpacing(dp(3),1);labels.addView(sub);weighted(r,labels);
+        Switch toggle=new Switch(this);toggle.setChecked(prefs.getBoolean(key,fallback));toggle.setContentDescription(title);toggle.setPadding(dp(12),0,0,0);
+        toggle.setOnCheckedChangeListener((b,enabled)->{prefs.edit().putBoolean(key,enabled).apply();if(changed!=null)changed.accept(enabled);});
+        r.addView(toggle);r.setMinimumHeight(dp(54));r.setOnClickListener(v->toggle.toggle());parent.addView(r);
+    }
+    private String heartSetting(String key,int detected,String source,int fallback){
+        int stored=getSharedPreferences("settings",0).getInt(key,0);
+        if(stored>0)return stored+" bpm · set by you";
+        return detected>0?detected+" bpm · "+source:fallback+" bpm · estimate until RunZone has data";
+    }
+    private int maxBpm(){int stored=getSharedPreferences("settings",0).getInt("maxBpm",0);return stored>0?stored:cachedObservedMax>0?cachedObservedMax:190;}
+    private int restingBpm(){int stored=getSharedPreferences("settings",0).getInt("restingBpm",0);return stored>0?stored:cachedResting>0?cachedResting:60;}
+    private void heartRateSetting(boolean max){
+        String key=max?"maxBpm":"restingBpm";int detected=max?cachedObservedMax:cachedResting;
+        LinearLayout box=column();box.setPadding(dp(24),dp(8),dp(24),dp(8));
+        box.addView(text(max?"Used for training load and zone suggestions. RunZone uses the highest heart rate you held for 10 seconds in the last 6 months, unless you set it.":"Used for training load. RunZone uses the lowest reading from your morning checks in the last 30 days, unless you set it.",14,MUTED));gap(box,12);
+        EditText input=new EditText(this);input.setTextColor(TEXT);input.setInputType(2);input.setSingleLine(true);input.setHint(detected>0?Integer.toString(detected):max?"190":"60");
+        int stored=getSharedPreferences("settings",0).getInt(key,0);if(stored>0)input.setText(Integer.toString(stored));input.setContentDescription(max?"Maximum heart rate":"Resting heart rate");box.addView(input);
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(max?"Maximum heart rate":"Resting heart rate").setView(box).setPositiveButton("Save",null).setNeutralButton("Use automatic",(d,w)->{getSharedPreferences("settings",0).edit().remove(key).apply();show(screen);}).setNegativeButton("Cancel",null).create();
+        dialog.setOnShowListener(d->dialog.getButton(-1).setOnClickListener(v->{try{int bpm=Integer.parseInt(input.getText().toString().trim());if(max?(bpm<120||bpm>230):(bpm<30||bpm>110))throw new IllegalArgumentException();getSharedPreferences("settings",0).edit().putInt(key,bpm).apply();dialog.dismiss();show(screen);}catch(IllegalArgumentException e){input.setError(max?"Enter 120–230 bpm":"Enter 30–110 bpm");}}));dialog.show();
+    }
+
+    /** Everything derived from the run history for training load, readiness and zone suggestions. */
+    private static final class Training {
+        List<TrainingLoad.Day> days=Collections.emptyList();TrainingLoad.Readiness readiness;List<RunAnalysis> analyses=new ArrayList<>();
+        int observedMax=-1,resting=-1,aerobic=-1,maxBpm,restingBpm;double ramp;double lastLoad=Double.NaN;
+    }
+    private Training computeTraining(java.io.File dir){
+        Training t=new Training();long now=System.currentTimeMillis(),cutoff=now-180L*TrainingLoad.DAY;
+        ArrayList<long[]> starts=new ArrayList<>();
+        for(java.io.File file:runFiles(dir)){try{RunRecord r=RunRecord.read(file);if(r.startTime>=cutoff&&!r.pulses.isEmpty()){t.analyses.add(new RunAnalysis(r));starts.add(new long[]{r.startTime});}}catch(Exception ignored){}}
+        List<TrainingLoad.Check> checks=MorningChecks.load(this);
+        t.observedMax=TrainingLoad.observedMax(t.analyses);t.resting=MorningChecks.restingBpm(checks,now);
+        ArrayList<RunAnalysis> recent=new ArrayList<>();for(RunAnalysis a:t.analyses)if(a.run.startTime>=now-90L*TrainingLoad.DAY)recent.add(a);
+        t.aerobic=TrainingLoad.aerobicThreshold(recent);
+        android.content.SharedPreferences prefs=getSharedPreferences("settings",0);
+        t.maxBpm=prefs.getInt("maxBpm",0)>0?prefs.getInt("maxBpm",0):t.observedMax>0?t.observedMax:190;
+        t.restingBpm=prefs.getInt("restingBpm",0)>0?prefs.getInt("restingBpm",0):t.resting>0?t.resting:60;
+        ArrayList<Double> loads=new ArrayList<>();for(RunAnalysis a:t.analyses)loads.add(TrainingLoad.trimp(a.heart,t.restingBpm,t.maxBpm));
+        if(!loads.isEmpty())t.lastLoad=loads.get(loads.size()-1);
+        t.days=TrainingLoad.days(starts,loads,now,84,TimeZone.getDefault());
+        TrainingLoad.Day today=t.days.get(t.days.size()-1);t.ramp=today.fitness-t.days.get(t.days.size()-8).fitness;
+        t.readiness=TrainingLoad.readiness(today,checks,now,t.ramp);
+        prefs.edit().putString("readinessTitle",t.readiness.title).putInt("readinessLevel",t.readiness.level).apply();
+        return t;
+    }
+    /** Computes training in the background and refreshes the cached heart-rate labels; then runs the callback on the main thread. */
+    private void refreshTraining(java.util.function.Consumer<Training> done){
+        final java.io.File dir=getFilesDir();final String startedOn=screen;
+        background.execute(()->{Training t=computeTraining(dir);handler.post(()->{
+            cachedObservedMax=t.observedMax;cachedResting=t.resting;
+            if("Settings".equals(screen)&&maxHeartLabel!=null){maxHeartLabel.setText(heartSetting("maxBpm",cachedObservedMax,"from your runs",190));restingHeartLabel.setText(heartSetting("restingBpm",cachedResting,"from morning checks",60));}
+            if(done!=null&&startedOn.equals(screen))done.accept(t);
+        });});
+    }
+    private void trainingSection(){
+        LinearLayout c=section("TRAINING","Readiness");TextView waiting=text("Adding up your training load…",13,MUTED);c.addView(waiting);endSection();
+        refreshTraining(t->{
+            c.removeAllViews();TrainingLoad.Readiness r=t.readiness;
+            int tone=r.level>0?LIME:r.level<0?0xffffbc8a:TEXT;
+            c.addView(bold(r.title,24,tone));gap(c,8);TextView advice=text(r.advice,14,TEXT);advice.setLineSpacing(dp(3),1);c.addView(advice);gap(c,18);
+            TrainingLoad.Day today=t.days.get(t.days.size()-1);
+            LinearLayout row=row();stat(row,"FITNESS",String.format(Locale.getDefault(),"%.0f",today.fitness),"42-day load");stat(row,"FATIGUE",String.format(Locale.getDefault(),"%.0f",today.fatigue),"7-day load");stat(row,"FORM",String.format(Locale.getDefault(),"%+.0f",today.form),"fitness − fatigue");c.addView(row);
+            double[] x=indexes(t.days.size()),fit=new double[x.length],fat=new double[x.length],form=new double[x.length],load=new double[x.length];
+            for(int i=0;i<x.length;i++){TrainingLoad.Day d=t.days.get(i);fit[i]=d.fitness;fat[i]=d.fatigue;form[i]=d.form;load[i]=d.load>0?d.load:Double.NaN;}
+            java.text.DateFormat day=java.text.DateFormat.getDateInstance(java.text.DateFormat.SHORT);
+            SeriesChart.Format date=v->{int i=(int)Math.round(v);return i>=0&&i<t.days.size()?day.format(new Date(t.days.get(i).start)):"";};
+            addChart(c,new SeriesChart(this,x,fit,"Fitness over the last 12 weeks").color(0xff7fb4ff).xFormat(date).labels("Fitness · 12 weeks","Today"));
+            addChart(c,new SeriesChart(this,x,form,"Form over the last 12 weeks").color(0xffd4a5ff).format(v->String.format(Locale.getDefault(),"%+.0f",v)).reference(0).xFormat(date).labels("Form · dashed line 0","Today"));
+            addChart(c,new SeriesChart(this,x,load,"Training load of each day").bars().color(0xffffbc8a).xFormat(date).labels("Daily load","Today"));
+            note(c,"Load is TRIMP from heart rate, using max "+t.maxBpm+" and resting "+t.restingBpm+" bpm. Fitness builds over about six weeks and fatigue over about one. Form above +5 means fresh; below −30 means you need rest. Readiness also uses your morning HRV checks.");
+            gap(c,14);c.addView(pill("Morning HRV check  →",0xff2a3835,LIME,v->morningCheck()));
+        });
+    }
+
+    private void morningCheck(){
+        RunService service=RunService.current;
+        if(service!=null&&service.running){Toast.makeText(this,"Finish your run before a morning check",Toast.LENGTH_LONG).show();return;}
+        if(service==null||service.freshBpm()<=0){new AlertDialog.Builder(this).setTitle("Connect your strap").setMessage("The morning check needs a heart-rate strap that sends beat-to-beat intervals. Most chest straps do; arm and watch sensors often don’t.\n\nPut it on, then connect it.").setPositiveButton("Connect sensor",(d,w)->devices()).setNegativeButton("Cancel",null).show();return;}
+        LinearLayout box=column();box.setPadding(dp(24),dp(12),dp(24),dp(12));
+        TextView intro=text("Do this soon after waking, before coffee. Lie or sit still and breathe normally for 2 minutes.",14,MUTED);intro.setLineSpacing(dp(3),1);box.addView(intro);gap(box,18);
+        TextView clock=bold("2:00",44,TEXT);clock.setGravity(Gravity.CENTER);box.addView(clock);gap(box,8);
+        TextView live=text("Waiting for beats…",14,MUTED);live.setGravity(Gravity.CENTER);box.addView(live);
+        ArrayList<Double> intervals=new ArrayList<>();long[] startedAt={0};
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Morning HRV check").setView(box).setNegativeButton("Cancel",null).setCancelable(false).create();
+        Runnable[] tick=new Runnable[1];
+        Runnable stop=()->{if(RunService.current!=null)RunService.current.beatListener=null;handler.removeCallbacks(tick[0]);};
+        tick[0]=()->{
+            RunService s=RunService.current;if(s==null){stop.run();dialog.dismiss();return;}
+            int bpm=s.freshBpm();
+            if(startedAt[0]==0){if(intervals.size()>=3){startedAt[0]=SystemClock.elapsedRealtime();intervals.clear();}handler.postDelayed(tick[0],1000);return;}
+            long left=Math.max(0,120000-(SystemClock.elapsedRealtime()-startedAt[0]));
+            clock.setText(String.format(Locale.getDefault(),"%d:%02d",left/60000,(left/1000)%60));
+            live.setText((bpm>0?bpm+" bpm  ·  ":"")+intervals.size()+" beats");
+            if(left>0){handler.postDelayed(tick[0],1000);return;}
+            stop.run();dialog.dismiss();
+            List<Double> clean=RunAnalysis.cleanIntervals(intervals);
+            if(clean.size()<60||clean.size()<intervals.size()*0.8){new AlertDialog.Builder(this).setTitle("Check didn’t work").setMessage(intervals.isEmpty()?"Your sensor isn’t sending beat-to-beat intervals, so HRV can’t be measured. A chest strap usually works.":"Too many irregular beats were recorded. Moisten the strap’s contacts, stay still and try again.").setPositiveButton("OK",null).show();return;}
+            double rmssd=RunAnalysis.rmssd(clean),mean=0;for(double v:clean)mean+=v;mean/=clean.size();int resting=(int)Math.round(60000/mean);
+            background.execute(()->{try{MorningChecks.add(this,Collections.singletonList(new TrainingLoad.Check(System.currentTimeMillis(),rmssd,resting)));}catch(Exception e){android.util.Log.w("RunZone","Could not save HRV check",e);}
+                handler.post(()->{new AlertDialog.Builder(this).setTitle("Morning check saved").setMessage(String.format(Locale.getDefault(),"HRV (RMSSD): %.0f ms\nResting heart rate: %d bpm\n\nCheck every morning for a week to set your baseline. Readiness compares each morning with your last 7.",rmssd,resting)).setPositiveButton("See readiness",(d,w)->show("History")).setNegativeButton("Close",(d,w)->show(screen)).show();});});
+        };
+        service.beatListener=ticks->{for(int t:ticks)if(t>0)intervals.add(t*1000.0/1024);};
+        dialog.setOnDismissListener(d->stop.run());
+        dialog.show();handler.postDelayed(tick[0],1000);
     }
     private TextView settingRow(LinearLayout parent,String title,String subtitle,View.OnClickListener listener){LinearLayout r=row(),labels=column();labels.addView(bold(title,17,TEXT));gap(labels,6);TextView sub=text(subtitle,12,MUTED);sub.setLineSpacing(dp(3),1);labels.addView(sub);weighted(r,labels);TextView arrow=text("›",27,LIME);arrow.setPadding(dp(12),dp(8),0,dp(8));r.addView(arrow);r.setMinimumHeight(dp(54));r.setOnClickListener(listener);parent.addView(r);return sub;}
     private void historyPage(){
         heading("Your runs","Every run is a step forward.");java.io.File[] files=new java.io.File(getFilesDir(),"runs").listFiles();int count=0;
-        if(files!=null&&files.length>0)trendsSection();
+        if(files!=null&&files.length>0){trainingSection();trendsSection();}
         if(files!=null){Arrays.sort(files,Collections.reverseOrder());for(java.io.File file:files)try{
             org.json.JSONObject run=new org.json.JSONObject(new String(java.nio.file.Files.readAllBytes(file.toPath()),java.nio.charset.StandardCharsets.UTF_8));LinearLayout c=card();smallTitle(c,java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(new Date(run.getLong("date"))).toUpperCase(Locale.getDefault()));gap(c,12);
             c.addView(bold(String.format(Locale.getDefault(),"%.2f km",run.getDouble("meters")/1000),30,TEXT));gap(c,8);long seconds=run.getLong("duration")/1000;c.addView(text(String.format(Locale.getDefault(),"%s  ·  %s",seconds>=3600?String.format(Locale.getDefault(),"%d:%02d:%02d",seconds/3600,(seconds/60)%60,seconds%60):String.format(Locale.getDefault(),"%d:%02d",seconds/60,seconds%60),java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(new Date(run.getLong("date")))),13,MUTED));gap(c,12);c.addView(bold("View run & stats  ›",13,LIME));c.setOnClickListener(v->openRun(file));content.addView(c);gap(content,12);count++;
@@ -281,7 +414,7 @@ public class MainActivity extends Activity implements LocationListener {
         if(a.recoverySeconds.length<5)recovery.addView(text("Keep your strap on after you tap Finish. RunZone records heart rate for 2 minutes afterwards, while the sensor stays connected, and shows how quickly it drops.",13,MUTED));
         else{
             LinearLayout r=row();stat(r,"AT FINISH",a.finishBpm>0?Integer.toString(a.finishBpm):"—","bpm");stat(r,"1 MIN",a.recovery60>=0?"−"+a.recovery60:"—","bpm drop");stat(r,"2 MIN",a.recovery120>=0?"−"+a.recovery120:"—","bpm drop");recovery.addView(r);
-            addChart(recovery,new SeriesChart(this,a.recoverySeconds,a.recoveryBpm,"Heart rate in the two minutes after finishing").color(0xffff8a80).labels("Finish","+2:00"));
+            addChart(recovery,new SeriesChart(this,a.recoverySeconds,a.recoveryBpm,"Heart rate in the two minutes after finishing").color(0xffff8a80).xFormat(v->"+"+SeriesChart.clock(v)).format(v->String.format(Locale.getDefault(),"%.0f bpm",v)).labels("Finish","+2:00"));
             note(recovery,a.recovery60<0?"Not enough readings around the one-minute mark.":a.recovery60>=20?"A drop of 20+ bpm in the first minute is a strong recovery.":a.recovery60>=12?"A 12–20 bpm drop in the first minute is typical.":"Under 12 bpm in the first minute is slow. Fatigue, heat and illness all slow recovery, so compare after similar runs.");
         }
         endSection();
@@ -307,9 +440,9 @@ public class MainActivity extends Activity implements LocationListener {
                 if(matches.size()<2){c.addView(text("This is the only run on this route so far. Run it again to compare.",13,MUTED));return;}
                 int self=matches.indexOf(run);double[] x=indexes(matches.size()),pace=new double[x.length],eff=new double[x.length];boolean anyEff=false;
                 for(int i=0;i<x.length;i++){RunAnalysis an=analyses.get(i);RunRecord m=matches.get(i);pace[i]=Double.isFinite(an.gapSecondsPerKm)?an.gapSecondsPerKm:(m.meters>0?m.durationMs/m.meters:Double.NaN);eff[i]=an.metresPerBeat;anyEff|=Double.isFinite(eff[i]);}
-                c.addView(text(matches.size()+" runs, oldest first. This run is highlighted.",13,MUTED));
-                addChart(c,new SeriesChart(this,x,pace,"Grade-adjusted pace on each run of this route").inverted().format(RunAnalysis::pace).highlight(self).labels("GAP per run","Latest"));
-                if(anyEff)addChart(c,new SeriesChart(this,x,eff,"Metres per heartbeat on each run of this route").color(0xff7fb4ff).format(v->String.format(Locale.getDefault(),"%.2f",v)).highlight(self).labels("Metres per beat","Latest"));
+                c.addView(text(matches.size()+" runs, oldest first. This run is highlighted.",13,MUTED));java.text.DateFormat shortDate=java.text.DateFormat.getDateInstance(java.text.DateFormat.SHORT);SeriesChart.Format runDate=v->{int i=(int)Math.round(v);return i>=0&&i<matches.size()?shortDate.format(new Date(matches.get(i).startTime)):"";};
+                addChart(c,new SeriesChart(this,x,pace,"Grade-adjusted pace on each run of this route").inverted().format(RunAnalysis::pace).highlight(self).xFormat(runDate).labels("GAP per run","Latest"));
+                if(anyEff)addChart(c,new SeriesChart(this,x,eff,"Metres per heartbeat on each run of this route").color(0xff7fb4ff).format(v->String.format(Locale.getDefault(),"%.2f",v)).highlight(self).xFormat(runDate).labels("Metres per beat","Latest"));
                 gap(c,14);java.text.DateFormat date=java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM);
                 for(int i=matches.size()-1;i>=0;i--){
                     RunRecord m=matches.get(i);RunAnalysis an=analyses.get(i);LinearLayout r=row();
@@ -334,12 +467,12 @@ public class MainActivity extends Activity implements LocationListener {
                 for(RunRecord r:runs){int w=11-(int)((now-r.startTime)/(7L*86400000));if(w>=0&&w<12)km[w]+=r.meters/1000;}
                 double total=0;for(double v:km)total+=v;
                 LinearLayout row=row();stat(row,"12 WEEKS",String.format(Locale.getDefault(),"%.0f",total),"km");stat(row,"PER WEEK",String.format(Locale.getDefault(),"%.1f",total/12),"km avg");stat(row,"RUNS",Integer.toString(runs.size()),"recorded");c.addView(row);
-                addChart(c,new SeriesChart(this,weeks,km,"Kilometres run each week for the last 12 weeks").bars().format(v->String.format(Locale.getDefault(),"%.0f",v)).highlight(11).labels("Weekly km · 12 wk ago","This week"));
-                double[] x=indexes(runs.size()),eff=new double[x.length],gap=new double[x.length],drift=new double[x.length];boolean anyEff=false,anyGap=false,anyDrift=false;
+                addChart(c,new SeriesChart(this,weeks,km,"Kilometres run each week for the last 12 weeks").bars().format(v->String.format(Locale.getDefault(),"%.0f km",v)).xFormat(v->{int w=11-(int)Math.round(v);return w==0?"This week":w+" wk ago";}).highlight(11).labels("Weekly km · 12 wk ago","This week"));
+                double[] x=indexes(runs.size()),eff=new double[x.length],gap=new double[x.length],drift=new double[x.length];boolean anyEff=false,anyGap=false,anyDrift=false;java.text.DateFormat shortDate=java.text.DateFormat.getDateInstance(java.text.DateFormat.SHORT);SeriesChart.Format runDate=v->{int i=(int)Math.round(v);return i>=0&&i<runs.size()?shortDate.format(new Date(runs.get(i).startTime)):"";};
                 for(int i=0;i<x.length;i++){RunAnalysis a=analyses.get(i);eff[i]=a.metresPerBeat;gap[i]=a.gapSecondsPerKm;drift[i]=a.decouplingPercent;anyEff|=Double.isFinite(eff[i]);anyGap|=Double.isFinite(gap[i]);anyDrift|=Double.isFinite(drift[i]);}
-                if(anyEff)addChart(c,new SeriesChart(this,x,eff,"Metres per heartbeat for each run").color(0xff7fb4ff).format(v->String.format(Locale.getDefault(),"%.2f",v)).labels("Metres per beat · per run","Latest"));
-                if(anyGap)addChart(c,new SeriesChart(this,x,gap,"Grade-adjusted pace for each run").inverted().format(RunAnalysis::pace).labels("Grade-adjusted pace · per run","Latest"));
-                if(anyDrift)addChart(c,new SeriesChart(this,x,drift,"Aerobic decoupling for each run of 20 minutes or more").color(0xffffbc8a).format(v->String.format(Locale.getDefault(),"%.0f%%",v)).reference(5).labels("Decoupling · dashed 5%","Latest"));
+                if(anyEff)addChart(c,new SeriesChart(this,x,eff,"Metres per heartbeat for each run").color(0xff7fb4ff).format(v->String.format(Locale.getDefault(),"%.2f",v)).xFormat(runDate).labels("Metres per beat · per run","Latest"));
+                if(anyGap)addChart(c,new SeriesChart(this,x,gap,"Grade-adjusted pace for each run").inverted().format(RunAnalysis::pace).xFormat(runDate).labels("Grade-adjusted pace · per run","Latest"));
+                if(anyDrift)addChart(c,new SeriesChart(this,x,drift,"Aerobic decoupling for each run of 20 minutes or more").color(0xffffbc8a).format(v->String.format(Locale.getDefault(),"%.0f%%",v)).reference(5).xFormat(runDate).labels("Decoupling · dashed 5%","Latest"));
                 note(c,"Rising metres per beat at a similar effort means your aerobic fitness is improving. Decoupling under 5% on long easy runs means your base is solid at that duration.");
             });
         });
@@ -359,7 +492,19 @@ public class MainActivity extends Activity implements LocationListener {
         RunRecord run=detailRun;String id=detailFile.getName().replace(".json","");Toast.makeText(this,"Preparing FIT export…",Toast.LENGTH_SHORT).show();
         background.execute(()->{try{java.io.File dir=new java.io.File(getCacheDir(),"exports");if(!dir.exists()&&!dir.mkdirs())throw new java.io.IOException();java.io.File file=new java.io.File(dir,"runzone-"+id+".fit");try(java.io.OutputStream output=new java.io.FileOutputStream(file)){FitExporter.write(run,output);}runOnUiThread(()->{if(isDestroyed())return;pendingExport=file;new AlertDialog.Builder(this).setTitle("Export your run").setMessage("FIT includes recorded GPS, timing, distance, heart rate and beat intervals when available. Import this file on Smashrun, Runalyze or Strava. Runs without GPS may not import on Smashrun.").setPositiveButton("Save file",(d,w)->{Intent create=new Intent(Intent.ACTION_CREATE_DOCUMENT).setType(FitExporter.MIME_TYPE).addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_TITLE,file.getName());startActivityForResult(create,80);}).setNeutralButton("Share file",(d,w)->{Uri uri=new Uri.Builder().scheme("content").authority(getPackageName()+".exports").appendPath(file.getName()).build();Intent share=new Intent(Intent.ACTION_SEND).setType(FitExporter.MIME_TYPE).putExtra(Intent.EXTRA_STREAM,uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);share.setClipData(ClipData.newRawUri("Run recording",uri));startActivity(Intent.createChooser(share,"Share FIT recording"));}).setNegativeButton("Cancel",null).show();});}catch(Exception e){runOnUiThread(()->Toast.makeText(this,"Couldn't prepare the export. Please try again.",Toast.LENGTH_LONG).show());}});
     }
-    @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request==80&&result==RESULT_OK&&data!=null&&data.getData()!=null&&pendingExport!=null){Uri destination=data.getData();java.io.File file=pendingExport;background.execute(()->{try(java.io.InputStream input=new java.io.FileInputStream(file);java.io.OutputStream output=getContentResolver().openOutputStream(destination)){if(output==null)throw new java.io.IOException();byte[] buffer=new byte[8192];int count;while((count=input.read(buffer))!=-1)output.write(buffer,0,count);runOnUiThread(()->Toast.makeText(this,"FIT file saved",Toast.LENGTH_SHORT).show());}catch(Exception e){runOnUiThread(()->Toast.makeText(this,"Couldn't save the export. Try another location.",Toast.LENGTH_LONG).show());}});}}
+    @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);
+        if((request==81||request==82)&&result==RESULT_OK&&data!=null&&data.getData()!=null){Uri uri=data.getData();if(request==81)writeBackup(uri);else new AlertDialog.Builder(this).setTitle("Restore from backup").setMessage("Missing runs and HRV checks will be added. Runs already on this phone are kept as they are.\n\nAlso restore zones, alerts and other training settings from the backup?").setPositiveButton("Runs and settings",(d,w)->restoreBackup(uri,true)).setNeutralButton("Runs only",(d,w)->restoreBackup(uri,false)).setNegativeButton("Cancel",null).show();return;}if(request==80&&result==RESULT_OK&&data!=null&&data.getData()!=null&&pendingExport!=null){Uri destination=data.getData();java.io.File file=pendingExport;background.execute(()->{try(java.io.InputStream input=new java.io.FileInputStream(file);java.io.OutputStream output=getContentResolver().openOutputStream(destination)){if(output==null)throw new java.io.IOException();byte[] buffer=new byte[8192];int count;while((count=input.read(buffer))!=-1)output.write(buffer,0,count);runOnUiThread(()->Toast.makeText(this,"FIT file saved",Toast.LENGTH_SHORT).show());}catch(Exception e){runOnUiThread(()->Toast.makeText(this,"Couldn't save the export. Try another location.",Toast.LENGTH_LONG).show());}});}}
+    private void writeBackup(Uri uri){
+        Toast.makeText(this,"Backing up…",Toast.LENGTH_SHORT).show();
+        background.execute(()->{try(java.io.OutputStream out=getContentResolver().openOutputStream(uri)){if(out==null)throw new java.io.IOException();int runs=Backup.write(this,out);runOnUiThread(()->Toast.makeText(this,"Backed up "+runs+(runs==1?" run":" runs"),Toast.LENGTH_LONG).show());}
+            catch(Exception e){android.util.Log.w("RunZone","Backup failed",e);runOnUiThread(()->Toast.makeText(this,"Couldn't write the backup. Try another location.",Toast.LENGTH_LONG).show());}});
+    }
+    private void restoreBackup(Uri uri,boolean settings){
+        Toast.makeText(this,"Restoring…",Toast.LENGTH_SHORT).show();
+        background.execute(()->{try(java.io.InputStream in=getContentResolver().openInputStream(uri)){if(in==null)throw new java.io.IOException();Backup.Result r=Backup.restore(this,in,settings);
+                runOnUiThread(()->{new AlertDialog.Builder(this).setTitle("Backup restored").setMessage(r.runs+(r.runs==1?" run":" runs")+" added"+(r.skipped>0?", "+r.skipped+" already here or unreadable":"")+".\n"+r.checks+" HRV checks added."+(r.settings?"\nSettings restored.":"")).setPositiveButton("OK",null).show();show(screen);});}
+            catch(Exception e){android.util.Log.w("RunZone","Restore failed",e);runOnUiThread(()->Toast.makeText(this,"That file isn't a RunZone backup, or it couldn't be read.",Toast.LENGTH_LONG).show());}});
+    }
     private void accountOptions(String provider){
         if(CloudAccounts.connected(this,provider)){ArrayList<String> options=new ArrayList<>();if(CloudAccounts.needsReconnect(this,provider))options.add("Reconnect account");if("Detail".equals(screen))options.add("Sync this run");options.add(CloudAccounts.enabled(this,provider)?"Turn automatic sync off":"Turn automatic sync on");options.add("Disconnect account");
             new AlertDialog.Builder(this).setTitle(CloudAccounts.name(provider)).setItems(options.toArray(new String[0]),(d,index)->{String option=options.get(index);if(option.equals("Reconnect account")){connectAccount(provider);}else if(option.equals("Sync this run")){CloudSync.enqueue(this,detailFile,provider);Toast.makeText(this,"Run queued for sync",Toast.LENGTH_SHORT).show();render();}else if(option.equals("Disconnect account")){new AlertDialog.Builder(this).setTitle("Disconnect "+CloudAccounts.name(provider)+"?").setMessage("Stops future uploads from this phone. Runs already uploaded remain in your account.").setPositiveButton("Disconnect",(a,w)->{CloudAccounts.disconnect(this,provider);show(screen);}).setNegativeButton("Cancel",null).show();}else{getSharedPreferences("sync",0).edit().putBoolean("enabled_"+provider,!CloudAccounts.enabled(this,provider)).apply();CloudSync.schedule(this);show(screen);}}).setNegativeButton("Cancel",null).show();
@@ -560,6 +705,16 @@ public class MainActivity extends Activity implements LocationListener {
         EditText[] fields=new EditText[4];
         for(int i=0;i<4;i++){gap(box,8);box.addView(text("Zone "+(i+1)+" ends at",13,TEXT));fields[i]=new EditText(this);fields[i].setTextColor(TEXT);fields[i].setInputType(2);fields[i].setSingleLine(true);fields[i].setText(Integer.toString(ends[i]));fields[i].setContentDescription("Zone "+(i+1)+" upper BPM boundary");box.addView(fields[i]);}
         gap(box,12);box.addView(preview);
+        gap(box,16);box.addView(text("Suggested from your runs",16,TEXT));TextView suggestion=text("Looking at your recent runs…",13,MUTED);suggestion.setLineSpacing(dp(3),1);box.addView(suggestion);
+        TextView useSuggestion=pill("Use suggested boundaries",0xff2a3835,LIME,null);useSuggestion.setVisibility(View.GONE);gap(box,8);box.addView(useSuggestion);
+        final java.io.File runsDir=getFilesDir();
+        background.execute(()->{Training t=computeTraining(runsDir);int[] suggested=TrainingLoad.suggestZones(t.maxBpm,t.aerobic);handler.post(()->{
+            cachedObservedMax=t.observedMax;cachedResting=t.resting;
+            if(suggested==null){suggestion.setText("Record a few hard runs with heart rate and RunZone will suggest zones.");return;}
+            String basis=t.aerobic>0?"Your aerobic threshold looks like "+t.aerobic+" bpm (where DFA α1 crosses 0.75 on steady runs), so Zone 2 tops out there.":"Based on 60/70/80/90% of your maximum heart rate. Run steady with a chest strap to find your aerobic threshold too.";
+            suggestion.setText("Maximum "+t.maxBpm+" bpm"+(getSharedPreferences("settings",0).getInt("maxBpm",0)>0?" (set by you)":t.observedMax>0?" (from your runs)":" (estimate)")+". "+basis+"\nZones 1–4 end at "+suggested[0]+", "+suggested[1]+", "+suggested[2]+" and "+suggested[3]+" bpm.");
+            useSuggestion.setVisibility(View.VISIBLE);useSuggestion.setOnClickListener(v->{for(int i=0;i<4;i++)fields[i].setText(Integer.toString(suggested[i]));});
+        });});
         AlertDialog[] zoneDialog=new AlertDialog[1];
         Runnable update=()->{
             int[] draft=new int[4];try{for(int i=0;i<4;i++)draft[i]=Integer.parseInt(fields[i].getText().toString());if(!ZoneRanges.valid(draft))throw new IllegalArgumentException();
