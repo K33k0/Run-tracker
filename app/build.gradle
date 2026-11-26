@@ -9,6 +9,7 @@ android {
     compileSdk 35
     defaultConfig {
         applicationId 'com.runzone'; minSdk 26; targetSdk 35
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         versionCode providers.gradleProperty('releaseVersionCode').map { it.toInteger() }.getOrElse(3)
         versionName providers.gradleProperty('releaseVersion').getOrElse('1.2')
         buildConfigField 'String', 'SMASHRUN_CLIENT_ID', groovy.json.JsonOutput.toJson(project.findProperty('smashrunClientId') ?: 'client')
@@ -34,7 +35,14 @@ android {
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
 }
-dependencies { testImplementation 'junit:junit:4.13.2'; testImplementation 'org.json:json:20240303' }
+dependencies {
+    testImplementation 'junit:junit:4.13.2'; testImplementation 'org.json:json:20240303'
+    // On-device screenshot test only; the app itself has no library dependencies.
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.test:rules:1.6.1'
+    androidTestImplementation 'androidx.test:core:1.6.1'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+}
 tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
 def verifyReleaseSigning = tasks.register('verifyReleaseSigning') {
     doLast {

@@ -294,10 +294,13 @@ public class RunService extends Service implements LocationListener {
     }
     @Override public void onProviderDisabled(String provider) { gps="GPS turned off"; distanceTracker.reset(); }
     @Override public void onProviderEnabled(String provider) { gps="Waiting for GPS"; }
+    /** Receives each notification's RR intervals (1/1024 s) on the main thread, for the morning HRV check. */
+    public volatile java.util.function.Consumer<int[]> beatListener;
     public int freshBpm() { return SystemClock.elapsedRealtime()-lastHr>10000 ? -1 : bpm; }
     private void receive(BluetoothGatt connection,byte[] bytes) { handler.post(()-> {
         if(current!=this||connection!=gatt) return;
         bpm=HeartRate.decode(bytes); lastHr=SystemClock.elapsedRealtime();
+        java.util.function.Consumer<int[]> beats=beatListener;if(beats!=null)beats.accept(HeartRate.rrIntervals(bytes));
         if(running&&!paused&&RunRecord.validBpm(bpm))try{
             JSONObject pulse=new JSONObject().put("time",System.currentTimeMillis())
                     .put("activeMs",elapsed()).put("bpm",bpm).put("track",trackIndex);
