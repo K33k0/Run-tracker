@@ -1,5 +1,10 @@
 # RunZone changelog
 
+## Unreleased
+
+- Share a run as an image: your route drawn on a clean card with distance, time, pace, heart rate and the best analysis figures, plus a highlight such as your fastest 5 km. Choose Post, Story or Square, and a Night, Lime or Dawn style. Share straight to any app or save to Photos.
+- Tidy the Distance target row in Settings.
+
 ## v1.2.9
 
 - Training load and readiness: every run with heart rate gets a load score. The run list shows fitness, fatigue and form over 12 weeks, with a daily verdict (Fresh, Balanced, Building, Take it easy or Overreaching). The run screen shows today's verdict.

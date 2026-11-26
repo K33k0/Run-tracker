@@ -82,6 +82,11 @@ public class ScreenshotTest {
             for(String section:new String[]{"EFFICIENCY","PACE & TERRAIN","TIME IN ZONE","STRIDE","HEART-RATE VARIABILITY","HEART-RATE RECOVERY","BEST EFFORTS IN THIS RUN","SAME ROUTE"})
                 assertTrue("Missing section "+section,hasText(scenario,section));
             capture(scenario,"3-detail",9);
+            call(scenario,"shareRun",null,null);SystemClock.sleep(1500);settle();
+            Bitmap dialog=InstrumentationRegistry.getInstrumentation().getUiAutomation().takeScreenshot();save("5-share-dialog",dialog);
+            pressBack();
+            RunRecord run=RunRecord.read(runs[runs.length-1]);RunAnalysis analysis=new RunAnalysis(run);
+            for(ShareCard.Format f:ShareCard.Format.values())for(ShareCard.Theme t:ShareCard.Theme.values())save("6-card-"+f.name().toLowerCase()+"-"+t.name().toLowerCase(),ShareCard.render(run,analysis,f,t));
             call(scenario,"show",String.class,"Settings");settle();
             for(String section:new String[]{"YOUR HEART","DURING A RUN","YOUR DATA","SENSOR & PHONE"})assertTrue("Missing section "+section,hasText(scenario,section));
             capture(scenario,"4-settings",5);
@@ -89,7 +94,7 @@ public class ScreenshotTest {
     }
 
     private static void call(ActivityScenario<MainActivity> scenario,String name,Class<?> type,Object arg){
-        scenario.onActivity(a->{try{Method m=MainActivity.class.getDeclaredMethod(name,type);m.setAccessible(true);m.invoke(a,arg);}catch(Exception e){throw new RuntimeException(e);}});
+        scenario.onActivity(a->{try{Method m=type==null?MainActivity.class.getDeclaredMethod(name):MainActivity.class.getDeclaredMethod(name,type);m.setAccessible(true);if(type==null)m.invoke(a);else m.invoke(a,arg);}catch(Exception e){throw new RuntimeException(e);}});
         settle();
     }
     private static void settle(){InstrumentationRegistry.getInstrumentation().waitForIdleSync();SystemClock.sleep(600);}
@@ -122,6 +127,11 @@ public class ScreenshotTest {
             scenario.onActivity(a->{ScrollView s=scroller(a.getWindow().getDecorView());if(s!=null){int before=s.getScrollY();s.scrollBy(0,(int)(s.getHeight()*0.85));moved[0]=s.getScrollY()!=before;}});
             if(!moved[0])break;settle();
         }
+    }
+    private static void pressBack(){InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);settle();}
+    private static void save(String name,Bitmap bitmap)throws IOException{
+        assertNotNull(bitmap);
+        try(OutputStream out=new TestStorage().openOutputFile("screenshots/"+name+".png")){bitmap.compress(Bitmap.CompressFormat.PNG,100,out);}
     }
     private static void write(File f,String text)throws IOException{try(OutputStream o=new FileOutputStream(f)){o.write(text.getBytes("UTF-8"));}}
     private static void deleteTree(File f){File[] c=f.listFiles();if(c!=null)for(File x:c)deleteTree(x);f.delete();}
