@@ -1,6 +1,6 @@
 # RunZone changelog
 
-## Unreleased
+## v1.2.8
 
 - Fix zone beeps sounding doubled while music is playing.
 - New run analysis on each run's detail page: metres per heartbeat, grade-adjusted pace (overall, per kilometre, and charted with elevation), rolling 60-second efficiency, aerobic decoupling, time in zone, cadence and estimated step length, heart-rate variability (RMSSD and DFA α1) during steady effort, and best efforts within the run.
