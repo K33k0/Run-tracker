@@ -174,7 +174,7 @@ public class MainActivity extends Activity implements LocationListener {
         smallTitle(content,"DURING A RUN");gap(content,12);LinearLayout run=card();
         toggleRow(run,"BPM-paced zone beeps","Beep at your heart rate while you’re outside your zone. Otherwise you get one alert every 20 seconds.","zoneBeeps",false,enabled->{if(RunService.current!=null)RunService.current.updateZoneBeeps();});
         divider(run);toggleRow(run,"Announce each kilometre","Vibrate and read out your split time.","kmAlerts",true,null);
-        divider(run);settingRow(run,"Distance target",distanceTargetLabel(),v->distanceTarget());
+        divider(run);String target=distanceTargetLabel().replace("  ›","");settingRow(run,"Distance target",target.startsWith("Set distance")?"No target · get an alert when you reach a distance":target,v->distanceTarget());
         divider(run);settingRow(run,"Test strong vibrations","Try the below-zone, above-zone and distance patterns",v->testHaptics());
         note(run,"Alerts start after 5 seconds outside your target and repeat every 20 seconds, including during auto-pause. Manual pause silences them. Keep media volume up.");
         content.addView(run);gap(content,22);
@@ -336,7 +336,7 @@ public class MainActivity extends Activity implements LocationListener {
     private void detailPage(){
         RunRecord run=detailRun;heading("Run details",java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.LONG,java.text.DateFormat.SHORT).format(new Date(run.startTime)));
         LinearLayout summary=card(),first=row(),second=row();stat(first,"DISTANCE",String.format(Locale.getDefault(),"%.2f",run.meters/1000),"km");stat(first,"ACTIVE TIME",durationLabel(run.durationMs),"excludes pauses");stat(first,"AVG PACE",run.meters>0?paceLabel(Math.round(run.durationMs/run.meters)):"—","min / km");summary.addView(first);gap(summary,22);
-        stat(second,"AVG HR",run.averageBpm()>0?Integer.toString(run.averageBpm()):"—","bpm");stat(second,"MAX HR",run.maxBpm()>0?Integer.toString(run.maxBpm()):"—","bpm");stat(second,"ELAPSED",durationLabel(run.elapsedMs),"including pauses");summary.addView(second);content.addView(summary);gap(content,22);
+        stat(second,"AVG HR",run.averageBpm()>0?Integer.toString(run.averageBpm()):"—","bpm");stat(second,"MAX HR",run.maxBpm()>0?Integer.toString(run.maxBpm()):"—","bpm");stat(second,"ELAPSED",durationLabel(run.elapsedMs),"including pauses");summary.addView(second);content.addView(summary);gap(content,14);content.addView(pill("Share run  ↗",LIME,BG,v->shareRun()));gap(content,22);
         smallTitle(content,"YOUR ROUTE");gap(content,12);ArrayList<Location> route=new ArrayList<>();int track=-1;for(RunRecord.Point point:run.points){if(track!=-1&&track!=point.track)route.add(null);Location location=new Location("recording");location.setLatitude(point.lat);location.setLongitude(point.lon);route.add(location);track=point.track;}
         FrameLayout frame=new FrameLayout(this);frame.setBackground(shape(0xffdee7da,22));frame.setClipToOutline(true);map=new LiveMapView(this);frame.addView(map,new FrameLayout.LayoutParams(-1,-1));
         LinearLayout controls=column();controls.addView(mapControl("+",v->map.zoomBy(1)));gap(controls,2);controls.addView(mapControl("−",v->map.zoomBy(-1)));gap(controls,2);TextView fit=mapControl("Fit",v->map.fitRoute(route));fit.setTextSize(13);controls.addView(fit);FrameLayout.LayoutParams controlPosition=new FrameLayout.LayoutParams(dp(44),-2,Gravity.TOP|Gravity.RIGHT);controlPosition.setMargins(0,dp(12),dp(12),0);frame.addView(controls,controlPosition);
@@ -476,6 +476,58 @@ public class MainActivity extends Activity implements LocationListener {
                 note(c,"Rising metres per beat at a similar effort means your aerobic fitness is improving. Decoupling under 5% on long easy runs means your base is solid at that duration.");
             });
         });
+    }
+    private ShareCard.Format shareFormat=ShareCard.Format.POST;
+    private ShareCard.Theme shareTheme=ShareCard.Theme.NIGHT;
+    private Bitmap shareBitmap;
+    private void shareRun(){
+        RunRecord run=detailRun;if(run==null)return;String id=detailFile.getName().replace(".json","");
+        RunAnalysis analysis=new RunAnalysis(run);
+        LinearLayout box=column();box.setPadding(dp(20),dp(16),dp(20),dp(8));
+        FrameLayout frame=new FrameLayout(this);frame.setBackground(shape(0xff0b1112,18));frame.setClipToOutline(true);
+        ImageView preview=new ImageView(this);preview.setAdjustViewBounds(true);preview.setScaleType(ImageView.ScaleType.FIT_CENTER);preview.setContentDescription("Share card preview");
+        frame.addView(preview,new FrameLayout.LayoutParams(-1,-1));
+        int previewHeight=Math.round(getResources().getDisplayMetrics().heightPixels*0.5f);
+        box.addView(frame,new LinearLayout.LayoutParams(-1,previewHeight));gap(box,16);
+        LinearLayout formats=row(),themes=row();ArrayList<TextView> formatPills=new ArrayList<>(),themePills=new ArrayList<>();
+        Runnable[] redraw=new Runnable[1];
+        Runnable style=()->{
+            for(int i=0;i<formatPills.size();i++){boolean on=ShareCard.Format.values()[i]==shareFormat;formatPills.get(i).setBackground(shape(on?0xff263c2c:CARD,14));formatPills.get(i).setTextColor(on?LIME:MUTED);}
+            for(int i=0;i<themePills.size();i++){boolean on=ShareCard.Theme.values()[i]==shareTheme;themePills.get(i).setBackground(shape(on?0xff263c2c:CARD,14));themePills.get(i).setTextColor(on?LIME:MUTED);}
+        };
+        for(ShareCard.Format f:ShareCard.Format.values()){TextView t=pill(f.label,CARD,MUTED,v->{shareFormat=f;style.run();redraw[0].run();});t.setMinHeight(dp(40));t.setPadding(dp(8),dp(8),dp(8),dp(8));formatPills.add(t);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);lp.rightMargin=dp(6);formats.addView(t,lp);}
+        for(ShareCard.Theme th:ShareCard.Theme.values()){TextView t=pill(th.label,CARD,MUTED,v->{shareTheme=th;style.run();redraw[0].run();});t.setMinHeight(dp(40));t.setPadding(dp(8),dp(8),dp(8),dp(8));themePills.add(t);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);lp.rightMargin=dp(6);themes.addView(t,lp);}
+        smallTitle(box,"SHAPE");gap(box,8);box.addView(formats);gap(box,14);smallTitle(box,"STYLE");gap(box,8);box.addView(themes);
+        style.run();
+        redraw[0]=()->{
+            ShareCard.Format f=shareFormat;ShareCard.Theme th=shareTheme;
+            background.execute(()->{Bitmap b=ShareCard.render(run,analysis,f,th);handler.post(()->{if(f!=shareFormat||th!=shareTheme){b.recycle();return;}shareBitmap=b;preview.setImageBitmap(b);});});
+        };
+        redraw[0].run();
+        ScrollView scroll=new ScrollView(this);scroll.addView(box);
+        AlertDialog.Builder builder=new AlertDialog.Builder(this).setTitle("Share your run").setView(scroll)
+            .setPositiveButton("Share  ↗",null).setNegativeButton("Close",null);
+        if(Build.VERSION.SDK_INT>=29)builder.setNeutralButton("Save to Photos",null);
+        AlertDialog dialog=builder.create();
+        dialog.setOnShowListener(d->{
+            dialog.getButton(-1).setOnClickListener(v->{Bitmap b=shareBitmap;if(b==null)return;background.execute(()->{try{
+                java.io.File dir=new java.io.File(getCacheDir(),"exports");if(!dir.exists()&&!dir.mkdirs())throw new java.io.IOException();
+                java.io.File file=new java.io.File(dir,"runzone-"+id+"-"+shareFormat.name().toLowerCase(Locale.ROOT)+".png");
+                try(java.io.OutputStream out=new java.io.FileOutputStream(file)){b.compress(Bitmap.CompressFormat.PNG,100,out);}
+                Uri uri=new Uri.Builder().scheme("content").authority(getPackageName()+".exports").appendPath(file.getName()).build();
+                runOnUiThread(()->{Intent send=new Intent(Intent.ACTION_SEND).setType("image/png").putExtra(Intent.EXTRA_STREAM,uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);send.setClipData(ClipData.newRawUri("Run",uri));startActivity(Intent.createChooser(send,"Share your run"));});
+            }catch(Exception e){runOnUiThread(()->Toast.makeText(this,"Couldn't prepare the image",Toast.LENGTH_LONG).show());}});});
+            if(Build.VERSION.SDK_INT>=29)dialog.getButton(-3).setOnClickListener(v->{Bitmap b=shareBitmap;if(b==null)return;background.execute(()->{
+                android.content.ContentValues values=new android.content.ContentValues();
+                values.put(android.provider.MediaStore.Images.Media.DISPLAY_NAME,"runzone-"+id+"-"+shareFormat.name().toLowerCase(Locale.ROOT)+".png");
+                values.put(android.provider.MediaStore.Images.Media.MIME_TYPE,"image/png");
+                values.put(android.provider.MediaStore.Images.Media.RELATIVE_PATH,android.os.Environment.DIRECTORY_PICTURES+"/RunZone");
+                Uri uri=getContentResolver().insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,values);
+                boolean ok=false;if(uri!=null)try(java.io.OutputStream out=getContentResolver().openOutputStream(uri)){ok=out!=null&&b.compress(Bitmap.CompressFormat.PNG,100,out);}catch(Exception ignored){}
+                boolean saved=ok;runOnUiThread(()->Toast.makeText(this,saved?"Saved to Pictures/RunZone":"Couldn't save the image",Toast.LENGTH_LONG).show());
+            });});
+        });
+        dialog.show();
     }
     private void confirmDelete(){
         java.io.File file=detailFile;if(file==null)return;
