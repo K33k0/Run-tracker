@@ -190,6 +190,7 @@ public class MainActivity extends Activity implements LocationListener {
     private TextView settingRow(LinearLayout parent,String title,String subtitle,View.OnClickListener listener){LinearLayout r=row(),labels=column();labels.addView(bold(title,17,TEXT));gap(labels,6);TextView sub=text(subtitle,12,MUTED);sub.setLineSpacing(dp(3),1);labels.addView(sub);weighted(r,labels);TextView arrow=text("›",27,LIME);arrow.setPadding(dp(12),dp(8),0,dp(8));r.addView(arrow);r.setMinimumHeight(dp(54));r.setOnClickListener(listener);parent.addView(r);return sub;}
     private void historyPage(){
         heading("Your runs","Every run is a step forward.");java.io.File[] files=new java.io.File(getFilesDir(),"runs").listFiles();int count=0;
+        if(files!=null&&files.length>0)trendsSection();
         if(files!=null){Arrays.sort(files,Collections.reverseOrder());for(java.io.File file:files)try{
             org.json.JSONObject run=new org.json.JSONObject(new String(java.nio.file.Files.readAllBytes(file.toPath()),java.nio.charset.StandardCharsets.UTF_8));LinearLayout c=card();smallTitle(c,java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(new Date(run.getLong("date"))).toUpperCase(Locale.getDefault()));gap(c,12);
             c.addView(bold(String.format(Locale.getDefault(),"%.2f km",run.getDouble("meters")/1000),30,TEXT));gap(c,8);long seconds=run.getLong("duration")/1000;c.addView(text(String.format(Locale.getDefault(),"%s  ·  %s",seconds>=3600?String.format(Locale.getDefault(),"%d:%02d:%02d",seconds/3600,(seconds/60)%60,seconds%60):String.format(Locale.getDefault(),"%d:%02d",seconds/60,seconds%60),java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(new Date(run.getLong("date")))),13,MUTED));gap(c,12);c.addView(bold("View run & stats  ›",13,LIME));c.setOnClickListener(v->openRun(file));content.addView(c);gap(content,12);count++;
@@ -209,13 +210,139 @@ public class MainActivity extends Activity implements LocationListener {
         TextView attribution=text("© OpenStreetMap contributors",10,0xff294333);attribution.setBackgroundColor(0xeef8fbf4);attribution.setPadding(dp(8),dp(4),dp(8),dp(4));attribution.setOnClickListener(v->startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse("https://www.openstreetmap.org/copyright"))));frame.addView(attribution,new FrameLayout.LayoutParams(-2,-2,Gravity.BOTTOM|Gravity.RIGHT));content.addView(frame,new LinearLayout.LayoutParams(-1,dp(300)));map.fitRoute(route);gap(content,22);
         smallTitle(content,"HEART RATE");gap(content,12);LinearLayout heartCard=card();
         if(run.pulses.isEmpty())heartCard.addView(text("No heart-rate data was recorded for this run.",14,MUTED));else{heartCard.addView(bold("Your effort, beat by beat",18,TEXT));gap(heartCard,10);heartCard.addView(new HeartChart(this,run),new LinearLayout.LayoutParams(-1,dp(150)));if(run.low>0){gap(heartCard,10);heartCard.addView(text("Starting target: "+run.low+"–"+run.high+" bpm",12,MUTED));}}
-        content.addView(heartCard);gap(content,22);List<RunRecord.Split> splits=run.splits();
-        if(!splits.isEmpty()){smallTitle(content,"KILOMETRE SPLITS");gap(content,12);LinearLayout splitCard=card();int index=1;for(RunRecord.Split split:splits){LinearLayout r=row();weighted(r,text(split.meters>=999.5?"Kilometre "+index:String.format(Locale.getDefault(),"Last %.2f km",split.meters/1000),14,TEXT));r.addView(bold(paceLabel(Math.round(split.durationMs/split.meters))+" /km",14,LIME));splitCard.addView(r);gap(splitCard,12);index++;}content.addView(splitCard);gap(content,22);}
+        content.addView(heartCard);gap(content,22);RunAnalysis analysis=new RunAnalysis(run);analysisSections(run,analysis);List<RunRecord.Split> splits=run.splits();
+        if(!splits.isEmpty()){smallTitle(content,"KILOMETRE SPLITS");gap(content,12);LinearLayout splitCard=card();int index=1;for(RunRecord.Split split:splits){LinearLayout r=row();weighted(r,text(split.meters>=999.5?"Kilometre "+index:String.format(Locale.getDefault(),"Last %.2f km",split.meters/1000),14,TEXT));if(analysis.hasAltitude&&index-1<analysis.gapSplits.size())r.addView(text("GAP "+RunAnalysis.pace(analysis.gapSplits.get(index-1))+"   ",12,MUTED));r.addView(bold(paceLabel(Math.round(split.durationMs/split.meters))+" /km",14,LIME));splitCard.addView(r);gap(splitCard,12);index++;}content.addView(splitCard);gap(content,22);}
+        sameRouteSection(run);
         if(run.legacy){content.addView(text("Older recording: start time is estimated, and kilometre splits are unavailable. Heart-rate stats use the samples that were saved.",12,MUTED));gap(content,22);}
         smallTitle(content,"SYNC & EXPORT");gap(content,12);LinearLayout sync=card();syncLabels.clear();
         for(String provider:CloudAccounts.PROVIDERS){LinearLayout r=row(),labels=column();labels.addView(bold(CloudAccounts.name(provider),16,TEXT));gap(labels,5);TextView state=text(CloudSync.status(this,detailFile.getName(),provider),12,MUTED);syncLabels.put(provider,state);labels.addView(state);weighted(r,labels);r.addView(pill("›",0xff2a3835,LIME,v->accountOptions(provider)));sync.addView(r);gap(sync,14);}
         sync.addView(pill("Export FIT file  ↗",LIME,BG,v->prepareExport()));gap(sync,12);sync.addView(text("Compatible with Smashrun, Runalyze and Strava. Save a file or share it with another app.",12,MUTED));content.addView(sync);
         gap(content,16);TextView delete=bold("Delete run",15,0xffff8a80);delete.setPadding(dp(8),dp(12),dp(8),dp(12));delete.setOnClickListener(v->confirmDelete());content.addView(delete);
+    }
+    private static double[] indexes(int n){double[] x=new double[n];for(int i=0;i<n;i++)x[i]=i;return x;}
+    private static String number(double value,String format){return Double.isFinite(value)?String.format(Locale.getDefault(),format,value):"—";}
+    private static String minutes(long seconds){return seconds>=3600?String.format(Locale.getDefault(),"%d:%02d:%02d",seconds/3600,(seconds/60)%60,seconds%60):String.format(Locale.getDefault(),"%d:%02d",seconds/60,seconds%60);}
+    private void addChart(LinearLayout card,SeriesChart chart){gap(card,14);card.addView(chart,new LinearLayout.LayoutParams(-1,dp(150)));}
+    private void note(LinearLayout card,String value){gap(card,12);TextView t=text(value,12,MUTED);t.setLineSpacing(dp(3),1);card.addView(t);}
+    private LinearLayout section(String title,String headline){smallTitle(content,title);gap(content,12);LinearLayout c=card();if(headline!=null){c.addView(bold(headline,18,TEXT));gap(c,14);}content.addView(c);return c;}
+    private void endSection(){gap(content,22);}
+    private void analysisSections(RunRecord run,RunAnalysis a){
+        String end=durationLabel(run.durationMs);double[] time=indexes(a.n);
+        if(a.hasRoute&&a.hasHeart){
+            LinearLayout c=section("EFFICIENCY","How far each heartbeat carries you");LinearLayout r=row();
+            stat(r,"M / BEAT",number(a.metresPerBeat,"%.2f"),"metres");stat(r,"GAP",RunAnalysis.pace(a.gapSecondsPerKm),"min / km");stat(r,"DECOUPLING",number(a.decouplingPercent,"%+.1f%%"),"Pa:HR");c.addView(r);
+            addChart(c,new SeriesChart(this,time,a.efficiency60,"Rolling 60-second efficiency in metres per heartbeat").format(v->String.format(Locale.getDefault(),"%.2f",v)).labels("Rolling 60 s · m/beat",end).reference(a.metresPerBeat));
+            String drift=!Double.isFinite(a.decouplingPercent)?"Decoupling needs at least 20 minutes of running with heart rate.":
+                a.decouplingPercent<5?"Under 5% decoupling: heart rate held steady against pace. Your aerobic base handled this effort.":
+                a.decouplingPercent<10?"5–10% decoupling: some cardiac drift. Heat, hills, fuelling or an effort near your aerobic limit.":
+                "Over 10% decoupling: efficiency faded a lot in the second half. This effort was beyond your current aerobic base.";
+            note(c,drift+(a.decouplingWarmupSeconds>0?" The first 5 minutes are left out as warm-up.":"")+" Efficiency and decoupling use grade-adjusted distance.");endSection();
+        }
+        if(a.hasRoute){
+            LinearLayout c=section("PACE & TERRAIN",a.hasAltitude?"Grade-adjusted pace":"Pace");LinearLayout r=row();
+            stat(r,"AVG PACE",run.meters>0?paceLabel(Math.round(run.durationMs/run.meters)):"—","actual");stat(r,"GAP",RunAnalysis.pace(a.gapSecondsPerKm),"flat effort");
+            stat(r,"CLIMB",a.hasAltitude?number(a.elevationGain,"+%.0f"):"—",a.hasAltitude?number(a.elevationLoss,"−%.0f m down"):"no altitude");c.addView(r);
+            SeriesChart chart=new SeriesChart(this,time,a.gapPace,"Grade-adjusted pace over the run").inverted().format(RunAnalysis::pace).labels(a.hasAltitude?"GAP · elevation shaded":"Pace, 30 s average",end);
+            if(a.hasAltitude)chart.shade(a.altitude);addChart(c,chart);
+            note(c,"Grade-adjusted pace is the flat-ground pace that would cost the same energy, using Minetti’s cost-of-running curve. Climbs make it faster than your actual pace, and gentle descents make it slower.");endSection();
+        }
+        if(a.hasHeart&&run.low>0&&a.secondsBelow+a.secondsIn+a.secondsAbove>0){
+            LinearLayout c=section("TIME IN ZONE","Target "+run.low+"–"+run.high+" bpm");long total=a.secondsBelow+a.secondsIn+a.secondsAbove;
+            int[] values={a.secondsBelow,a.secondsIn,a.secondsAbove};String[] names={"Below","In zone","Above"};int[] colors={0xff7fb4ff,LIME,0xffffbc8a};
+            for(int i=0;i<3;i++){
+                LinearLayout r=row();r.addView(text(names[i],13,TEXT),new LinearLayout.LayoutParams(dp(64),-2));
+                LinearLayout track=row();track.setBackground(shape(0xff2a3835,6));View fill=new View(this);fill.setBackground(shape(colors[i],6));
+                track.addView(fill,new LinearLayout.LayoutParams(0,dp(12),Math.max(0.0001f,values[i])));track.addView(new View(this),new LinearLayout.LayoutParams(0,dp(12),Math.max(0.0001f,total-values[i])));
+                weighted(r,track);r.addView(bold(String.format(Locale.getDefault(),"  %d%%  %s",Math.round(100.0*values[i]/total),minutes(values[i])),12,MUTED));c.addView(r);gap(c,10);
+            }
+            endSection();
+        }
+        if(a.hasCadence){
+            LinearLayout c=section("STRIDE","Cadence and step length");LinearLayout r=row();
+            stat(r,"CADENCE",number(a.averageCadence,"%.0f"),"steps / min");stat(r,"STEP LENGTH",number(a.averageStepLength,"%.2f"),"metres (est.)");c.addView(r);
+            if(Double.isFinite(a.averageStepLength))addChart(c,new SeriesChart(this,time,a.stepLength,"Estimated step length over the run").color(0xff7fb4ff).format(v->String.format(Locale.getDefault(),"%.2f m",v)).labels("Step length",end));
+            else addChart(c,new SeriesChart(this,time,a.cadence,"Cadence over the run").color(0xff7fb4ff).labels("Cadence, spm",end));
+            note(c,"Step length is estimated from GPS speed divided by the phone’s step count, so it is only as accurate as both sensors.");endSection();
+        }
+        if(a.hasHeart){
+            LinearLayout c=section("HEART-RATE VARIABILITY","During steady effort");
+            if(a.hrvWindows.isEmpty())c.addView(text("No steady two-minute stretches with beat-to-beat intervals were found. HRV needs a chest strap that sends RR intervals, and a section of even effort.",13,MUTED));
+            else{
+                LinearLayout r=row();stat(r,"RMSSD",number(a.rmssd,"%.1f"),"ms");stat(r,"DFA α1",number(a.alpha1,"%.2f"),"median");stat(r,"STEADY",Integer.toString(a.hrvWindows.size()*2),"minutes");c.addView(r);
+                double[] x=new double[a.hrvWindows.size()],rm=new double[x.length],al=new double[x.length];
+                for(int i=0;i<x.length;i++){RunAnalysis.HrvWindow w=a.hrvWindows.get(i);x[i]=w.startSecond;rm[i]=w.rmssd;al[i]=w.alpha1;}
+                addChart(c,new SeriesChart(this,x,al,"DFA alpha 1 for each steady two-minute window").color(0xffd4a5ff).format(v->String.format(Locale.getDefault(),"%.2f",v)).reference(0.75).labels("DFA α1 · dashed 0.75",end));
+                addChart(c,new SeriesChart(this,x,rm,"RMSSD for each steady two-minute window").color(0xff7fb4ff).labels("RMSSD, ms",end));
+                note(c,"DFA α1 above 0.75 suggests you were under your aerobic threshold. Around 0.5 is near the anaerobic threshold. RMSSD is very low while running, so compare it between similar runs, not with resting values.");
+            }
+            endSection();
+        }
+        LinearLayout recovery=section("HEART-RATE RECOVERY",null);
+        if(a.recoverySeconds.length<5)recovery.addView(text("Keep your strap on after you tap Finish. RunZone records heart rate for 2 minutes afterwards, while the sensor stays connected, and shows how quickly it drops.",13,MUTED));
+        else{
+            LinearLayout r=row();stat(r,"AT FINISH",a.finishBpm>0?Integer.toString(a.finishBpm):"—","bpm");stat(r,"1 MIN",a.recovery60>=0?"−"+a.recovery60:"—","bpm drop");stat(r,"2 MIN",a.recovery120>=0?"−"+a.recovery120:"—","bpm drop");recovery.addView(r);
+            addChart(recovery,new SeriesChart(this,a.recoverySeconds,a.recoveryBpm,"Heart rate in the two minutes after finishing").color(0xffff8a80).labels("Finish","+2:00"));
+            note(recovery,a.recovery60<0?"Not enough readings around the one-minute mark.":a.recovery60>=20?"A drop of 20+ bpm in the first minute is a strong recovery.":a.recovery60>=12?"A 12–20 bpm drop in the first minute is typical.":"Under 12 bpm in the first minute is slow. Fatigue, heat and illness all slow recovery, so compare after similar runs.");
+        }
+        endSection();
+        boolean anyBest=false;for(long b:a.bestEfforts)if(b>0)anyBest=true;
+        if(anyBest){
+            LinearLayout c=section("BEST EFFORTS IN THIS RUN",null);
+            for(int i=0;i<a.bestEfforts.length;i++){if(a.bestEfforts[i]<=0)continue;LinearLayout r=row();weighted(r,text(RunAnalysis.BEST_EFFORT_NAMES[i],14,TEXT));r.addView(text(paceLabel(Math.round(a.bestEfforts[i]*1000.0/RunAnalysis.BEST_EFFORT_METERS[i]))+" /km   ",12,MUTED));r.addView(bold(minutes(a.bestEfforts[i]),14,LIME));c.addView(r);gap(c,12);}
+            endSection();
+        }
+    }
+    /** Saved runs, oldest first (file names are save timestamps). */
+    private static java.io.File[] runFiles(java.io.File dir){java.io.File[] files=new java.io.File(dir,"runs").listFiles((d,name)->name.endsWith(".json"));if(files==null)return new java.io.File[0];Arrays.sort(files);return files;}
+    private void sameRouteSection(RunRecord run){
+        LinearLayout c=section("SAME ROUTE","Earlier runs on this course");TextView waiting=text("Looking for earlier runs on this route…",13,MUTED);c.addView(waiting);endSection();
+        final java.io.File current=detailFile;final java.io.File dir=getFilesDir();
+        background.execute(()->{
+            ArrayList<RunRecord> matches=new ArrayList<>();ArrayList<RunAnalysis> analyses=new ArrayList<>();
+            for(java.io.File file:runFiles(dir)){
+                try{RunRecord other=file.equals(current)?run:RunRecord.read(file);if(other==run||RunAnalysis.sameRoute(run,other)){matches.add(other);analyses.add(new RunAnalysis(other));}}catch(Exception ignored){}
+            }
+            handler.post(()->{
+                if(!"Detail".equals(screen)||detailRun!=run)return;c.removeView(waiting);
+                if(matches.size()<2){c.addView(text("This is the only run on this route so far. Run it again to compare.",13,MUTED));return;}
+                int self=matches.indexOf(run);double[] x=indexes(matches.size()),pace=new double[x.length],eff=new double[x.length];boolean anyEff=false;
+                for(int i=0;i<x.length;i++){RunAnalysis an=analyses.get(i);RunRecord m=matches.get(i);pace[i]=Double.isFinite(an.gapSecondsPerKm)?an.gapSecondsPerKm:(m.meters>0?m.durationMs/m.meters:Double.NaN);eff[i]=an.metresPerBeat;anyEff|=Double.isFinite(eff[i]);}
+                c.addView(text(matches.size()+" runs, oldest first. This run is highlighted.",13,MUTED));
+                addChart(c,new SeriesChart(this,x,pace,"Grade-adjusted pace on each run of this route").inverted().format(RunAnalysis::pace).highlight(self).labels("GAP per run","Latest"));
+                if(anyEff)addChart(c,new SeriesChart(this,x,eff,"Metres per heartbeat on each run of this route").color(0xff7fb4ff).format(v->String.format(Locale.getDefault(),"%.2f",v)).highlight(self).labels("Metres per beat","Latest"));
+                gap(c,14);java.text.DateFormat date=java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM);
+                for(int i=matches.size()-1;i>=0;i--){
+                    RunRecord m=matches.get(i);RunAnalysis an=analyses.get(i);LinearLayout r=row();
+                    weighted(r,text(date.format(new Date(m.startTime))+(i==self?"  · this run":""),13,i==self?LIME:TEXT));
+                    r.addView(text(minutes(m.durationMs/1000)+"  ·  "+(m.averageBpm()>0?m.averageBpm()+" bpm  ·  ":"")+(Double.isFinite(an.metresPerBeat)?number(an.metresPerBeat,"%.2f")+" m/b  ·  ":"")+RunAnalysis.pace(an.gapSecondsPerKm),12,MUTED));
+                    c.addView(r);gap(c,10);
+                }
+            });
+        });
+    }
+    private void trendsSection(){
+        LinearLayout c=section("TRENDS","Your last 12 weeks");TextView waiting=text("Crunching your runs…",13,MUTED);c.addView(waiting);endSection();
+        final java.io.File dir=getFilesDir();
+        background.execute(()->{
+            ArrayList<RunRecord> runs=new ArrayList<>();ArrayList<RunAnalysis> analyses=new ArrayList<>();
+            long now=System.currentTimeMillis(),cutoff=now-84L*86400000;
+            for(java.io.File file:runFiles(dir)){try{RunRecord r=RunRecord.read(file);if(r.startTime>=cutoff){runs.add(r);analyses.add(new RunAnalysis(r));}}catch(Exception ignored){}}
+            handler.post(()->{
+                if(!"History".equals(screen))return;c.removeView(waiting);
+                if(runs.isEmpty()){c.addView(text("No runs in the last 12 weeks.",13,MUTED));return;}
+                double[] weeks=indexes(12),km=new double[12];
+                for(RunRecord r:runs){int w=11-(int)((now-r.startTime)/(7L*86400000));if(w>=0&&w<12)km[w]+=r.meters/1000;}
+                double total=0;for(double v:km)total+=v;
+                LinearLayout row=row();stat(row,"12 WEEKS",String.format(Locale.getDefault(),"%.0f",total),"km");stat(row,"PER WEEK",String.format(Locale.getDefault(),"%.1f",total/12),"km avg");stat(row,"RUNS",Integer.toString(runs.size()),"recorded");c.addView(row);
+                addChart(c,new SeriesChart(this,weeks,km,"Kilometres run each week for the last 12 weeks").bars().format(v->String.format(Locale.getDefault(),"%.0f",v)).highlight(11).labels("Weekly km · 12 wk ago","This week"));
+                double[] x=indexes(runs.size()),eff=new double[x.length],gap=new double[x.length],drift=new double[x.length];boolean anyEff=false,anyGap=false,anyDrift=false;
+                for(int i=0;i<x.length;i++){RunAnalysis a=analyses.get(i);eff[i]=a.metresPerBeat;gap[i]=a.gapSecondsPerKm;drift[i]=a.decouplingPercent;anyEff|=Double.isFinite(eff[i]);anyGap|=Double.isFinite(gap[i]);anyDrift|=Double.isFinite(drift[i]);}
+                if(anyEff)addChart(c,new SeriesChart(this,x,eff,"Metres per heartbeat for each run").color(0xff7fb4ff).format(v->String.format(Locale.getDefault(),"%.2f",v)).labels("Metres per beat · per run","Latest"));
+                if(anyGap)addChart(c,new SeriesChart(this,x,gap,"Grade-adjusted pace for each run").inverted().format(RunAnalysis::pace).labels("Grade-adjusted pace · per run","Latest"));
+                if(anyDrift)addChart(c,new SeriesChart(this,x,drift,"Aerobic decoupling for each run of 20 minutes or more").color(0xffffbc8a).format(v->String.format(Locale.getDefault(),"%.0f%%",v)).reference(5).labels("Decoupling · dashed 5%","Latest"));
+                note(c,"Rising metres per beat at a similar effort means your aerobic fitness is improving. Decoupling under 5% on long easy runs means your base is solid at that duration.");
+            });
+        });
     }
     private void confirmDelete(){
         java.io.File file=detailFile;if(file==null)return;
