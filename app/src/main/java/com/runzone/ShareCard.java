@@ -43,7 +43,7 @@ public final class ShareCard {
     /** One line worth bragging about, or null. */
     public static String highlight(RunRecord run,RunAnalysis a){
         for(int i=a.bestEfforts.length-1;i>=0;i--)if(a.bestEfforts[i]>0&&RunAnalysis.BEST_EFFORT_METERS[i]>=1000&&run.meters<RunAnalysis.BEST_EFFORT_METERS[i]*1.6)
-            return "Fastest "+RunAnalysis.BEST_EFFORT_NAMES[i]+" in this run · "+SeriesChart.clock(a.bestEfforts[i]);
+            return "Fastest "+RunAnalysis.BEST_EFFORT_NAMES[i]+" · "+SeriesChart.clock(a.bestEfforts[i]);
         if(Double.isFinite(a.decouplingPercent)&&a.decouplingPercent<5&&run.durationMs>=45*60000L)return "Rock-steady aerobic run · "+String.format(Locale.getDefault(),"%.1f%%",a.decouplingPercent)+" drift";
         if(a.recovery60>=20)return "Heart rate dropped "+a.recovery60+" bpm in 1 minute after finishing";
         long zone=a.secondsBelow+a.secondsIn+a.secondsAbove;
@@ -93,12 +93,13 @@ public final class ShareCard {
         List<Stat> stats=stats(run,a);int columns=3,rows=(stats.size()+columns-1)/columns;
         float cell=format==Format.SQUARE?140:170,gridTop=h-m-rows*cell;
         String line=highlight(run,a);
-        float routeBottom=gridTop-(line!=null?110:40);
+        float routeBottom=gridTop-(line!=null?140:40);
         if(line!=null){
-            p.setTypeface(medium);p.setTextSize(34);float tw=Math.min(w-2*m,p.measureText(line)+64);
+            // Pill: 32 px dot inset, 22 px gap, text, 32 px right padding.
+            p.setTypeface(medium);p.setTextSize(34);float tw=Math.min(w-2*m,p.measureText(line)+86);
             p.setColor(theme.panel);c.drawRoundRect(m,routeBottom+18,m+tw,routeBottom+86,34,34,p);
             p.setColor(theme.accent);c.drawCircle(m+32,routeBottom+52,9,p);
-            p.setColor(theme.text);c.drawText(ellipsize(line,p,tw-80),m+54,routeBottom+64,p);
+            p.setColor(theme.text);c.drawText(ellipsize(line,p,tw-86),m+54,routeBottom+64,p);
         }
 
         // Route, or the heart-rate trace when there's no GPS.

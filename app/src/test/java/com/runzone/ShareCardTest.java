@@ -21,7 +21,7 @@ public class ShareCardTest {
 
     @Test public void highlightPicksLongestBestEffortThatFits()throws Exception{
         RunRecord run=RunRecord.fromJson(RunAnalysisTest.run(30,s->140,null,false));
-        assertEquals("Fastest 5 km in this run · 27:47",ShareCard.highlight(run,new RunAnalysis(run)));
+        assertEquals("Fastest 5 km · 27:47",ShareCard.highlight(run,new RunAnalysis(run)));
     }
 
     @Test public void routeKeepsAspectAndFitsBox(){

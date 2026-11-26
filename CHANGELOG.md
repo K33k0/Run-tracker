@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Share a run as an image: your route drawn on a clean card with distance, time, pace, heart rate and the best analysis figures, plus a highlight such as your fastest 5 km. Choose Post, Story or Square, and a Night, Lime or Dawn style. Share straight to any app or save to Photos.
+- Share a run as an image: your route drawn on a clean card with distance, time, pace, heart rate and the best analysis figures, plus a highlight such as your fastest 5 km in the run. Choose Post, Story or Square, and a Night, Lime or Dawn style. Share straight to any app or save to Photos.
 - Tidy the Distance target row in Settings.
 
 ## v1.2.9
