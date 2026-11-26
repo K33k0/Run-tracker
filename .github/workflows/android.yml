@@ -69,12 +69,12 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
           script: |
-            status=0; bash ./gradlew connectedDebugAndroidTest || status=$?; mkdir -p screenshots; adb pull /sdcard/Android/data/com.runzone/files/screenshots screenshots/ || true; exit $status
+            bash ./gradlew connectedDebugAndroidTest
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: RunZone-screenshots
           path: |
-            screenshots/
+            app/build/outputs/connected_android_test_additional_output/
             app/build/reports/androidTests/
           if-no-files-found: ignore

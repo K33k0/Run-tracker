@@ -10,6 +10,8 @@ android {
     defaultConfig {
         applicationId 'com.runzone'; minSdk 26; targetSdk 35
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+        // Lets the screenshot test save files that survive the app being uninstalled after the run.
+        testInstrumentationRunnerArguments useTestStorageService: 'true'
         versionCode providers.gradleProperty('releaseVersionCode').map { it.toInteger() }.getOrElse(3)
         versionName providers.gradleProperty('releaseVersion').getOrElse('1.2')
         buildConfigField 'String', 'SMASHRUN_CLIENT_ID', groovy.json.JsonOutput.toJson(project.findProperty('smashrunClientId') ?: 'client')
@@ -42,6 +44,8 @@ dependencies {
     androidTestImplementation 'androidx.test:rules:1.6.1'
     androidTestImplementation 'androidx.test:core:1.6.1'
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    androidTestImplementation 'androidx.test.services:storage:1.5.0'
+    androidTestUtil 'androidx.test.services:test-services:1.5.0'
 }
 tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
 def verifyReleaseSigning = tasks.register('verifyReleaseSigning') {

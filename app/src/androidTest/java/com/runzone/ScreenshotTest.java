@@ -11,6 +11,7 @@ import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 import androidx.test.rule.GrantPermissionRule;
+import androidx.test.services.storage.TestStorage;
 import org.json.*;
 import org.junit.*;
 import org.junit.runner.RunWith;
@@ -21,7 +22,8 @@ import static org.junit.Assert.*;
 
 /**
  * Seeds realistic runs, opens each main screen, checks the analysis sections render, and saves
- * screenshots (scrolling down the page) to the app's external files folder for CI to collect.
+ * screenshots (scrolling down the page) through the test storage service, which Gradle copies to
+ * build/outputs/connected_android_test_additional_output.
  */
 @RunWith(AndroidJUnit4.class)
 public class ScreenshotTest {
@@ -30,7 +32,6 @@ public class ScreenshotTest {
         Manifest.permission.BLUETOOTH_CONNECT,Manifest.permission.POST_NOTIFICATIONS,Manifest.permission.ACTIVITY_RECOGNITION);
 
     private Context context;
-    private File shots;
 
     @Before public void seed()throws Exception{
         context=InstrumentationRegistry.getInstrumentation().getTargetContext();
@@ -46,7 +47,6 @@ public class ScreenshotTest {
         for(int i=8;i>=0;i--)checks.put(new JSONObject().put("time",now-i*day-2*3600000L).put("rmssd",55+random.nextGaussian()*5).put("restingBpm",50+random.nextInt(4)));
         write(new File(context.getFilesDir(),"hrv-checks.json"),checks.toString());
         context.getSharedPreferences("settings",0).edit().clear().putBoolean("zoneBeeps",true).apply();
-        shots=new File(context.getExternalFilesDir(null),"screenshots");deleteTree(shots);shots.mkdirs();
     }
 
     /** A hilly out-and-back with heart rate, beat intervals, cadence and post-finish recovery. */
@@ -117,7 +117,7 @@ public class ScreenshotTest {
         for(int page=1;page<=pages;page++){
             Bitmap shot=InstrumentationRegistry.getInstrumentation().getUiAutomation().takeScreenshot();
             assertNotNull(shot);
-            try(OutputStream out=new FileOutputStream(new File(shots,name+"-"+page+".png"))){shot.compress(Bitmap.CompressFormat.PNG,100,out);}
+            try(OutputStream out=new TestStorage().openOutputFile("screenshots/"+name+"-"+page+".png")){shot.compress(Bitmap.CompressFormat.PNG,100,out);}
             boolean[] moved={false};
             scenario.onActivity(a->{ScrollView s=scroller(a.getWindow().getDecorView());if(s!=null){int before=s.getScrollY();s.scrollBy(0,(int)(s.getHeight()*0.85));moved[0]=s.getScrollY()!=before;}});
             if(!moved[0])break;settle();
