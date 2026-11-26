@@ -1,6 +1,6 @@
 # RunZone changelog
 
-## Unreleased
+## v1.2.9
 
 - Training load and readiness: every run with heart rate gets a load score. The run list shows fitness, fatigue and form over 12 weeks, with a daily verdict (Fresh, Balanced, Building, Take it easy or Overreaching). The run screen shows today's verdict.
 - Morning HRV check: 2 minutes lying still with your strap on. It measures resting HRV and heart rate, and readiness compares each morning with your last week.
