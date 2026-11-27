@@ -1,5 +1,9 @@
 # RunZone changelog
 
+## v1.3.1
+
+- "How it went" at the top of each run: a plain-English read of your pacing, hills, time in zone, heart-rate drift, effort from heart-rate variability, recovery and cadence, so the graphs are easier to make sense of.
+
 ## v1.3.0
 
 - Share a run as an image: your route drawn on a clean card with distance, time, pace, heart rate and the best analysis figures, plus a highlight such as your fastest 5 km in the run. Choose Post, Story or Square, and a Night, Lime or Dawn style. Share straight to any app or save to Photos.
